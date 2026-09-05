@@ -6,6 +6,15 @@ import { defineConfig } from 'vite';
 declare const process: { env: Record<string, string | undefined> };
 
 export default defineConfig({
+  // Relative, so the built bundle does not care what path it is served from.
+  // GitHub Pages serves this repo from `/deep-field-td/`, and the default `/`
+  // would make every asset URL absolute and 404 there. Relative also keeps
+  // localhost and the tailnet IP working, which pinning `/deep-field-td/`
+  // would have broken — `npm run play` serves the same dist from the root.
+  // The app routes on query parameters (`?race`, `?seed=`) and never on path
+  // segments, so there is no nested-URL case where a relative base resolves
+  // against the wrong directory.
+  base: './',
   server: {
     // Bind all interfaces so a friend can reach the dev server over Tailscale.
     // Phase 2 relies on this; harmless now.
