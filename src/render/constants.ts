@@ -66,6 +66,24 @@ export const DECK_PX_TOUCH = 212;
 export const STRIP_PX_TOUCH = 48;
 
 /**
+ * What a second deck row costs, in board-space px.
+ *
+ * Versus renders two sections the campaign never does — the sortie deck and its
+ * own Send button — and the deck is a fixed composition laid out against 1040px
+ * (see `fitCanvas`), so the five sections together overran the row by about
+ * 500px. Flex spent the overrun on the two items that could give: the inspector
+ * collapsed to 68px, narrower than one of its three upgrade buttons, and the
+ * Send control was pushed clear off the panel's right edge. `renderDeck` wraps
+ * into two rows there instead, and this is what the second row is paid for
+ * with — one control row plus the gap above it.
+ *
+ * Additive rather than a second pair of constants so both chrome tiers derive
+ * from the heights they already had; a taller deck shrinks the board on a
+ * height-bound window, which is the same trade `DECK_PX_TOUCH` documents.
+ */
+export const DECK_ROW_PX = 124;
+
+/**
  * Below this on either axis, a touch device is a phone rather than a tablet.
  *
  * The width bound is an iPad mini in portrait (744) staying on the roomy side;

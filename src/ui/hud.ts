@@ -532,7 +532,8 @@ export function deckKey(w: World, ui: UiState, inspected: Tower | undefined): st
   ].join('|');
 }
 
-function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string {
+/** Exported for the deck-width budget in tools/check.ts, like its neighbours. */
+export function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string {
   const handle =
     `<button class="handle" data-act="deck">Deck <span>${ui.deckOpen ? '▼' : '▲'}</span>` +
     `<kbd>Tab</kbd></button>`;
@@ -544,15 +545,52 @@ function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string
     return `<div class="strip">${handle}</div>`;
   }
 
+  const build =
+    `<section class="build"><h6>Build${ui.selected ? ' · armed' : ''}</h6>` +
+    `<div class="slots">${renderSlots(w, ui)}</div></section>`;
+  const detail = `<section class="detail">${renderDetail(w, ui, inspected)}</section>`;
+  const send = `<section class="send">${handle}${renderSend(w)}</section>`;
+
+  // ── Versus wraps, because five sections do not fit one row ────────────────
+  //
+  // The deck is a fixed composition laid out against 1040px and scaled as a
+  // whole (`fitCanvas`), so horizontal room is a hard budget — the one
+  // tools/check.ts calls "the deck row fits the logical board width". That
+  // check only ever counted the campaign's two flexible items, slots + detail,
+  // and versus adds two more sections it never knew about: the sortie deck
+  // (342px) and a Send button of its own. All five came to ~1515px of 1008,
+  // and flex spent the 500px overrun on whatever could give — the inspector
+  // collapsed to 68px, which is narrower than ONE of its three upgrade
+  // buttons, so a versus player could see their tower but not upgrade it, and
+  // Send was pushed off the panel's right edge entirely.
+  //
+  // Wrapping is the first answer that check names, and it is the right one
+  // here: the alternative — hiding the sortie deck while a tower is inspected
+  // — would take an offensive control away at a moment the player did not
+  // choose, in the one mode where the other side is pressing. Defence on the
+  // top row, offence on the bottom, both always live. `DECK_ROW_PX` reserves
+  // the height.
+  if (w.rules.sorties) {
+    return (
+      `<div class="panel rows">` +
+      `<div class="row">${build}<span class="sep"></span>${detail}</div>` +
+      // renderSortieDeck emits its own trailing separator, so this row reads
+      // sorties | sep | send.
+      `<div class="row">${renderSortieDeck(w, ui)}${send}</div>` +
+      `</div>`
+    );
+  }
+
+  // The campaign's single row, unchanged — `renderSortieDeck` is empty here, so
+  // this stays byte-identical to what it has always emitted.
   return (
     `<div class="panel">` +
-    `<section class="build"><h6>Build${ui.selected ? ' · armed' : ''}</h6>` +
-    `<div class="slots">${renderSlots(w, ui)}</div></section>` +
+    build +
     `<span class="sep"></span>` +
     renderSortieDeck(w, ui) +
-    `<section class="detail">${renderDetail(w, ui, inspected)}</section>` +
+    detail +
     `<span class="sep"></span>` +
-    `<section class="send">${handle}${renderSend(w)}</section>` +
+    send +
     `</div>`
   );
 }

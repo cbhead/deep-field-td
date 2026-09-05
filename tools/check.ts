@@ -16,7 +16,7 @@ import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render
 import { SECTOR_FIELDS, THEME, step } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { STATION_MARKS } from '../src/render/stationShape.ts';
-import { deckKey, renderArmed, renderInspector, renderNextContact, renderPaused, renderSlots } from '../src/ui/hud.ts';
+import { deckKey, renderArmed, renderDeck, renderInspector, renderNextContact, renderPaused, renderSlots } from '../src/ui/hud.ts';
 import { createUiState } from '../src/app/uiState.ts';
 import { boardFacts, boardThumb } from '../src/ui/boardThumb.ts';
 import { CAMPAIGN, VERSUS_LEVEL } from '../src/content/levels.ts';
@@ -3629,6 +3629,70 @@ section('hud · build slot states');
     slotsWidth + DETAIL_CAP <= LOGICAL_W,
     'the deck row fits the logical board width',
     `${TOWER_IDS.length} slots = ${slotsWidth}px + ${DETAIL_CAP}px detail vs ${LOGICAL_W}px`,
+  );
+
+  // ---------------------------------------------------------------------------
+  // ...AND VERSUS SPENDS THE SAME BUDGET TWICE OVER.
+  //
+  // The check above counts the campaign's two flexible items and nothing else,
+  // which is exactly how versus shipped broken: it renders two sections the
+  // campaign never does — the sortie deck and its own Send button — and all
+  // four together wanted ~1515px of the 1008 inside the panel's padding. Flex
+  // does not report an over-subscribed row, it just pays for it out of whatever
+  // can shrink, so the overrun landed on the inspector (68px — narrower than
+  // ONE of its three upgrade buttons, so a versus player could select a tower
+  // and not upgrade it) and on Send, which was pushed clean off the panel's
+  // right edge. Neither is visible in a screenshot of a board with no tower
+  // selected, which is why it survived.
+  //
+  // `renderDeck` wraps into two rows there. Both are budgeted here against the
+  // same 1040, with the rigid items only — a build slot and a sortie card are
+  // fixed px, whereas `.send`'s hint wraps, so only its button is reserved.
+  const PANEL_PAD = 32; // .deck .panel { padding: 0 16px }
+  const ROW_GAP = 16; //   .panel.rows .row { gap: 16px }
+  const SEP_PX = 1;
+  const SORTIE_PX = 52;
+  const SORTIE_GAP = 6;
+  const SEND_PX = 150;
+  const sortiesWidth = SORTIE_IDS.length * SORTIE_PX + (SORTIE_IDS.length - 1) * SORTIE_GAP;
+
+  // Defence on top: build | sep | detail. Offence below: sorties | sep | send.
+  const defenceRow = PANEL_PAD + slotsWidth + SEP_PX + DETAIL_CAP + 2 * ROW_GAP;
+  const offenceRow = PANEL_PAD + sortiesWidth + SEP_PX + SEND_PX + 2 * ROW_GAP;
+  check(
+    defenceRow <= LOGICAL_W,
+    'versus deck: the defence row fits',
+    `${slotsWidth}px slots + ${DETAIL_CAP}px detail = ${defenceRow}px vs ${LOGICAL_W}px`,
+  );
+  check(
+    offenceRow <= LOGICAL_W,
+    'versus deck: the offence row fits',
+    `${SORTIE_IDS.length} sorties = ${sortiesWidth}px + ${SEND_PX}px send = ${offenceRow}px vs ${LOGICAL_W}px`,
+  );
+
+  // The wrap is load-bearing, not stylistic: state the overrun that forces it,
+  // so nobody unwraps the rows to "simplify" and reintroduces a 68px inspector.
+  const oneRow = defenceRow + sortiesWidth + SEP_PX + SEND_PX + 2 * ROW_GAP;
+  check(
+    oneRow > LOGICAL_W,
+    'versus deck: one row could not have held it',
+    `${oneRow}px vs ${LOGICAL_W}px — the wrap is required, not decorative`,
+  );
+
+  // And that the markup actually wraps where the arithmetic says it must.
+  const deckUi = { ...ui, sortieLane: 0 } as unknown as Parameters<typeof renderDeck>[1];
+  const fight = versusWorld();
+  fight.money = 100_000;
+  const versusDeck = renderDeck(fight, deckUi, undefined);
+  const campaignDeck = renderDeck(rich, deckUi, undefined);
+  check(
+    versusDeck.includes('class="panel rows"') &&
+      (versusDeck.match(/<div class="row">/g) ?? []).length === 2,
+    'versus deck: renders two rows',
+  );
+  check(
+    campaignDeck.includes('class="panel"') && !campaignDeck.includes('class="row"'),
+    'campaign deck: still one row',
   );
 
   // The shortfall is arithmetic, not decoration: it has to be the real number.

@@ -288,6 +288,19 @@ kbd {
   box-shadow: 0 -14px 44px rgb(0 0 0 / .75);
 }
 
+/* Versus only — see `renderDeck` for why it wraps and `DECK_ROW_PX` for what
+   the extra height costs. `.row` is the flex container the single-row panel
+   used to be, so every section inside keeps the sizing it already had: `.detail`
+   still flexes to its 430px cap, `.send` still rides `margin-left:auto` to the
+   right edge. Only the stacking is new. */
+.deck .panel.rows {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 14px;
+}
+.deck .panel.rows .row { display: flex; align-items: center; gap: 16px; }
+
 .deck h6 {
   margin: 0 0 8px;
   font: 400 9.5px/1 inherit;
@@ -949,6 +962,10 @@ button.path:hover { border-color: var(--accent); }
   max-height: 150px;
   overflow-x: auto;
 }
+/* Versus's second row needs the height it was wrapped to get. Compact overlays
+   rather than reserving, so this costs no board — and the cap staying finite
+   keeps the clamp honest if a third row ever appears. */
+.td-compact .deck .panel.rows { max-height: 274px; }
 /* What actually fits, rather than what the guideline asks for. */
 .td-compact { --tap: 44px; }
 

@@ -497,7 +497,16 @@ async function startGame(
   // Race passes no level, so it plays the baseline ground — the same one on both
   // clients, which is what keeps two screens comparable at a glance.
   const field = fieldFor(opts.level?.field);
-  const { app, layers } = await createRenderer(mount, boardW, boardH, field);
+  // The same flag `renderDeck` wraps on, so the height reserved and the rows
+  // actually laid out cannot disagree — a deck that wrapped without being paid
+  // for would put its second row back over the final approach.
+  const { app, layers } = await createRenderer(
+    mount,
+    boardW,
+    boardH,
+    field,
+    rules.sorties ? 2 : 1,
+  );
 
   const textures = createTextures(app.renderer);
   const mapLayer = buildMapLayer(map, textures, field);

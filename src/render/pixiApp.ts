@@ -2,6 +2,7 @@ import { Application, Container } from 'pixi.js';
 import {
   DECK_PX,
   DECK_PX_TOUCH,
+  DECK_ROW_PX,
   isCompactViewport,
   STRIP_PX_TOUCH,
   TOP_PX,
@@ -27,12 +28,20 @@ export interface Renderer {
   layers: Layers;
 }
 
-/** Canvas size is dictated by the map, so it is passed in rather than assumed. */
+/**
+ * Canvas size is dictated by the map, so it is passed in rather than assumed.
+ *
+ * `deckRows` is how many control rows the open deck lays out — one in the
+ * campaign, two in versus, decided by `renderDeck` from the same rule flag. It
+ * is reserved height rather than a render concern, which is why it has to
+ * arrive here: the board and the deck letterbox as one stack.
+ */
 export async function createRenderer(
   mount: HTMLElement,
   width: number,
   height: number,
   field: SectorField,
+  deckRows = 1,
 ): Promise<Renderer> {
   const app = new Application();
 
@@ -61,9 +70,9 @@ export async function createRenderer(
   // v8: `app.canvas`, not `app.view`.
   mount.appendChild(app.canvas);
 
-  fitCanvas(app);
+  fitCanvas(app, deckRows);
   watchViewport(() => {
-    fitCanvas(app);
+    fitCanvas(app, deckRows);
   });
 
   const layers: Layers = {
@@ -137,14 +146,21 @@ function chromeFor(
   touch: boolean,
   vw: number,
   vh: number,
+  deckRows: number,
 ): { top: number; deck: number; tier: ChromeTier } {
-  if (!touch) return { top: TOP_PX, deck: DECK_PX, tier: 'desktop' };
+  // Versus's second row, added to whichever tier's height would otherwise apply.
+  const extra = (deckRows - 1) * DECK_ROW_PX;
+
+  if (!touch) return { top: TOP_PX, deck: DECK_PX + extra, tier: 'desktop' };
   // A phone is best-effort, and there the board size wins over the button size,
   // because at that scale no amount of reserved chrome makes the buttons big
   // enough anyway — so reserve the collapsed strip and give the rest to board.
+  // Compact reserves the *closed* strip and overlays when opened, so a second
+  // row costs it nothing here; `.td-compact .deck .panel.rows` gives it the
+  // height at the point it is actually shown.
   return isCompactViewport(touch, vw, vh)
     ? { top: TOP_PX, deck: STRIP_PX_TOUCH, tier: 'compact' }
-    : { top: TOP_PX_TOUCH, deck: DECK_PX_TOUCH, tier: 'roomy' };
+    : { top: TOP_PX_TOUCH, deck: DECK_PX_TOUCH + extra, tier: 'roomy' };
 }
 
 /**
@@ -190,13 +206,13 @@ function watchViewport(refit: () => void): void {
 /** Last (viewport, tier) actually fitted, so repeat triggers cost nothing. */
 let lastFit = '';
 
-function fitCanvas(app: Application): void {
+function fitCanvas(app: Application, deckRows: number): void {
   const viewport = document.documentElement;
   const vw = viewport.clientWidth;
   const vh = viewport.clientHeight;
 
   const touch = matchMedia('(pointer: coarse)').matches;
-  const chrome = chromeFor(touch, vw, vh);
+  const chrome = chromeFor(touch, vw, vh, deckRows);
 
   // ResizeObserver fires on every pixel of Safari's toolbar sliding away, so
   // this has to be cheap when nothing meaningful changed. It is also the
