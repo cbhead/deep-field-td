@@ -223,6 +223,40 @@ export function contactShape(id: EnemyId): ContactShape {
     case 'bulwark':
       return bulwark(def.armor);
 
+    // Reuses Bulwark's plate machinery on its own armour value, so the silhouette
+    // states the real number for the same reason Bulwark's does — and so the two
+    // read as one family, which is the thing a player has to spot early.
+    case 'ironclad':
+      return bulwark(def.armor);
+
+    case 'aegis':
+      return {
+        rotates: false,
+        parts: [
+          // Warden's layered read, one ring further out and thinner. More shield
+          // showing, less body: this is the contact that is mostly its overshield.
+          { kind: 'disc', cx: 0, cy: 0, r: 1, alpha: 0.3 },
+          { kind: 'ring', r: 0.86, width: 0.1, k: 1 },
+          { kind: 'ring', r: 0.62, width: 0.1, k: 0.85 },
+          { kind: 'disc', cx: 0, cy: 0, r: 0.34, k: 1 },
+        ],
+      };
+
+    case 'skimmer':
+      return {
+        rotates: true,
+        // A Mote sharpened: shorter tail, tighter nucleus, no loose motes
+        // trailing behind it. Same comet grammar so the family reads, but this
+        // one is drawn as something committed to a direction — which is exactly
+        // what makes it the contact a slow cannot bend.
+        parts: [
+          { kind: 'lens', from: 0.4, to: -1.15, half: 0.2, alpha: 0.24 },
+          { kind: 'disc', cx: -0.2, cy: 0, r: 0.18, alpha: 0.5 },
+          { kind: 'disc', cx: 0.4, cy: 0, r: 0.44, alpha: 0.32 },
+          { kind: 'disc', cx: 0.4, cy: 0, r: 0.26, k: 1.35 },
+        ],
+      };
+
     case 'drifter':
     default:
       return {

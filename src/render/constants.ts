@@ -18,8 +18,20 @@ export const tilesToPx = (tiles: number): number => tiles * TILE_PX;
  *
  * Lives here rather than only in CSS because `fitCanvas` has to letterbox the
  * board and the deck as one unit; the stylesheet reads it back as `--deck-h`.
+ *
+ * **150 → 200 is what twelve stations cost, and they cost it here rather than
+ * in width.** Six slots in one row and six-by-two are both 508px wide, so the
+ * deck's horizontal budget — the thing `check.ts` used to gate — did not move at
+ * all. The second row is 74px of slot plus an 8px gap, and the remaining slack
+ * is the panel's own padding.
+ *
+ * Priced before it was taken: this is free at 1440x900 and 1512x850, where the
+ * fit is width-bound, and costs 5.4% of board scale at 1280x800 and 5.9% at
+ * 1366x768. Keeping the old 86px slot height instead would have wanted 224 here
+ * and cost 8%, which is why the slot shrank rather than the deck growing to meet
+ * it.
  */
-export const DECK_PX = 150;
+export const DECK_PX = 200;
 
 /**
  * Height the top bar reserves above the board, in board-space px.
@@ -52,7 +64,13 @@ export const TAP_PX = 56;
  * simply missed. iPad portrait is width-bound and pays nothing for this at all.
  */
 export const TOP_PX_TOUCH = 66;
-export const DECK_PX_TOUCH = 212;
+/**
+ * 212 → 224 for the same reason `DECK_PX` moved, and by a smaller step because
+ * the touch deck already had slack. Two rows of slots plus the section heading
+ * want 173.5px; 212 would technically hold them, with about half a pixel left
+ * for the panel's own breathing. Costs 1.4% of board scale on an iPad landscape.
+ */
+export const DECK_PX_TOUCH = 224;
 
 /**
  * What a short viewport reserves for the deck: the collapsed strip only.
@@ -107,8 +125,26 @@ export const DECK_ROW_PX = 124;
  */
 export const DOCK_GAP = 14;
 export const DOCK_MARGIN = 23;
-/** Build column, and the era square beneath it. */
-export const DOCK_BUILD_PX = 103;
+/**
+ * Build column, and the era square beneath it.
+ *
+ * **103 → 186, because twelve slots do not fit in one column and the failure was
+ * not going to be visible.** The docked build dock is a vertical strip about
+ * 674px tall inside the stage. Six slots is 106.5px each; twelve is 49.8px,
+ * which at the 0.855 stage scale on a 1440x900 is **42.5 CSS px** — under the
+ * 44px convention and far under `TAP_PX`. Nothing asserted a minimum slot
+ * height, so this would have degraded silently into unhittable controls.
+ *
+ * So the column becomes two columns of six: 18px of padding plus 2x80 plus an
+ * 8px gap. Slots come out 80 x 106.5 — the same height they are today and 5px
+ * narrower.
+ *
+ * The bill is board scale, and it is real: the docked stage goes 1685 → 1768,
+ * so a 1440-wide window scales 0.855 → 0.814, a 4.8% loss. Nothing changes at
+ * 1768px or wider. `DOCK_DETAIL_PX` deliberately does *not* shrink to pay for
+ * this — it is gated at above `DETAIL_CAP` precisely so it cannot be raided.
+ */
+export const DOCK_BUILD_PX = 186;
 /** Detail column, full height at the right. */
 export const DOCK_DETAIL_PX = 468;
 /** Sortie deck, directly beneath the board and the same width as it. */

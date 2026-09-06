@@ -331,6 +331,15 @@ export function attachInput(
     }
     if (ev.code === 'Space') {
       ev.preventDefault();
+      // Shift+Space is "send every wave" to Space's "send this one". Pairing
+      // them on one key is the whole reason to spend a modifier here: the
+      // standing order and the single order are the same verb.
+      if (ev.shiftKey) {
+        if (world.rules.autoStart) {
+          world.commands.push({ type: 'setAutoStart', on: !world.wave.autoStart });
+        }
+        return;
+      }
       world.commands.push({ type: 'startWave' });
       return;
     }

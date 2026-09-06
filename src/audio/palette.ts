@@ -143,6 +143,145 @@ export const FIRE: Partial<Record<TowerId, SoundSpec>> = {
     pitchJitter: 0.07,
     gainJitter: 0.2,
   },
+
+  // --------------------------------------------------------------------------
+  // The five new stations that shoot. Salvage is absent because it never fires,
+  // the same reason Singularity and Filament are absent above — except they are
+  // continuous voices and this one is genuinely silent.
+  //
+  // Every decay here is under 60ms. That is not caution, it is the table's rule:
+  // twelve stations is exactly the density the "tuned alone, invariably too long"
+  // warning at the top of this file is about.
+
+  /**
+   * A hiss with the pitch falling away — something being eaten rather than
+   * struck. It fires every 0.35s, which is close to the rate at which one-shots
+   * stop resolving as separate events, so it is the shortest and quietest thing
+   * in the combat set.
+   */
+  solvent: {
+    layers: [
+      {
+        kind: 'noise',
+        freq: 9000,
+        gain: 0.09,
+        attack: 0.001,
+        decay: 0.022,
+        filter: { type: 'bandpass', freq: 9000, q: 1.1, freqEnd: 6000 },
+      },
+    ],
+    priority: P.shot,
+    bus: 'shots',
+    pitchJitter: 0.08,
+    gainJitter: 0.22,
+  },
+
+  /** A hard crack, sharp on the front. Glass, not metal — it breaks shields. */
+  breaker: {
+    layers: [
+      {
+        kind: 'noise',
+        freq: 950,
+        gain: 0.2,
+        attack: 0.001,
+        decay: 0.04,
+        filter: { type: 'bandpass', freq: 950, q: 2.6, freqEnd: 700 },
+      },
+      {
+        kind: 'tone',
+        wave: 'sine',
+        freq: 905,
+        freqEnd: 620,
+        gain: 0.11,
+        attack: 0.001,
+        decay: 0.05,
+      },
+    ],
+    priority: P.shot,
+    bus: 'shots',
+    pitchJitter: 0.05,
+    gainJitter: 0.16,
+  },
+
+  /** An ignition: a short breath of noise over a tone that opens upward. */
+  ember: {
+    layers: [
+      {
+        kind: 'noise',
+        freq: 1900,
+        gain: 0.13,
+        attack: 0.004,
+        decay: 0.055,
+        filter: { type: 'bandpass', freq: 1900, q: 1.3, freqEnd: 2600 },
+      },
+      {
+        kind: 'tone',
+        wave: 'square',
+        freq: 1700,
+        freqEnd: 2100,
+        gain: 0.07,
+        attack: 0.003,
+        decay: 0.045,
+      },
+    ],
+    priority: P.shot,
+    bus: 'shots',
+    pitchJitter: 0.06,
+    gainJitter: 0.18,
+  },
+
+  /**
+   * A low shove. The one new station allowed any weight at all, and it earns it
+   * the way Nova earns its low end — by firing every 1.6s, the slowest gun here.
+   */
+  repulsor: {
+    layers: [
+      {
+        kind: 'tone',
+        wave: 'sine',
+        freq: 452,
+        freqEnd: 300,
+        gain: 0.2,
+        attack: 0.002,
+        decay: 0.075,
+      },
+      {
+        kind: 'noise',
+        freq: 520,
+        gain: 0.1,
+        attack: 0.001,
+        decay: 0.035,
+        filter: { type: 'lowpass', freq: 700, q: 0.9 },
+      },
+    ],
+    priority: P.shot,
+    bus: 'shots',
+    pitchJitter: 0.04,
+    gainJitter: 0.14,
+  },
+
+  /**
+   * One report for the trigger, not one per shot — `towerFired` is emitted once
+   * per pull however many contacts a Mk III Sentinel picked up. A sound per
+   * target would make it loudest exactly when the board is worst, which is
+   * backwards, and this is the station a player listens for.
+   */
+  sentinel: {
+    layers: [
+      {
+        kind: 'noise',
+        freq: 3600,
+        gain: 0.16,
+        attack: 0.001,
+        decay: 0.038,
+        filter: { type: 'bandpass', freq: 3600, q: 1.8, freqEnd: 2600 },
+      },
+    ],
+    priority: P.shot,
+    bus: 'shots',
+    pitchJitter: 0.065,
+    gainJitter: 0.2,
+  },
 };
 
 /** How much quieter landed chain damage is than the report that started it. */
@@ -368,6 +507,72 @@ export const DEATH: Record<EnemyId, SoundSpec> = {
     gainJitter: 0.15,
     duck: 0.3,
   },
+
+  // The three below are each written as a *departure from* the contact they
+  // share a question with, so the roster still sorts into families by ear the
+  // way it does by eye — plated, protected, swarm.
+
+  /** Bulwark's crack, lower and longer. More plate to get through. */
+  ironclad: {
+    layers: [
+      {
+        kind: 'noise',
+        freq: 1300,
+        gain: 0.36,
+        attack: 0.001,
+        decay: 0.18,
+        filter: { type: 'bandpass', freq: 1300, q: 3.4, freqEnd: 520 },
+      },
+      { kind: 'tone', wave: 'square', freq: 380, freqEnd: 130, gain: 0.15, attack: 0.001, decay: 0.15 },
+    ],
+    priority: P.kill,
+    bus: 'impacts',
+    pitchJitter: 0.05,
+    gainJitter: 0.14,
+    duck: 0.35,
+  },
+
+  /** Warden's glassy end, brighter and with more of it to break. */
+  aegis: {
+    layers: [
+      {
+        kind: 'noise',
+        freq: 2600,
+        gain: 0.28,
+        attack: 0.001,
+        decay: 0.14,
+        filter: { type: 'bandpass', freq: 2600, q: 2.4, freqEnd: 1100 },
+      },
+      { kind: 'tone', wave: 'triangle', freq: 780, freqEnd: 260, gain: 0.13, attack: 0.002, decay: 0.12 },
+    ],
+    priority: P.kill,
+    bus: 'impacts',
+    pitchJitter: 0.07,
+    gainJitter: 0.16,
+    duck: 0.25,
+  },
+
+  /**
+   * A Mote's tick, higher and shorter still. These arrive in numbers and at
+   * speed, so this is the one death in the game that has to be nearly nothing —
+   * see the density warning at the top of this file.
+   */
+  skimmer: {
+    layers: [
+      {
+        kind: 'noise',
+        freq: 4600,
+        gain: 0.1,
+        attack: 0.001,
+        decay: 0.03,
+        filter: { type: 'bandpass', freq: 4600, q: 2, freqEnd: 3000 },
+      },
+    ],
+    priority: P.hit,
+    bus: 'impacts',
+    pitchJitter: 0.14,
+    gainJitter: 0.25,
+  },
 };
 
 /** The overshield giving way. Glassy, and clearly *not* a kill. */
@@ -439,7 +644,7 @@ export const SPLIT: SoundSpec = {
 
 /**
  * Arming a station in the deck, pitched into that station's own band — so
- * selecting one previews the voice it will have on the board, and the five are
+ * selecting one previews the voice it will have on the board, and the twelve are
  * told apart by ear before anything is built.
  */
 export const SELECT: Record<TowerId, SoundSpec> = {
@@ -459,6 +664,35 @@ export const SELECT: Record<TowerId, SoundSpec> = {
   // gap in this table and 640 is its midpoint; square rather than sine keeps it
   // off the two neighbours below it, which are both sine.
   overclock: uiBlip(640, 'square'),
+
+  // --------------------------------------------------------------------------
+  // THE SIX ABOVE WERE, UNREMARKED, ALMOST AN OCTAVE LADDER: 160, 320, 640,
+  // 1200, 2400, 5000. Doubling the roster is therefore not a hunt for six free
+  // frequencies — it is halving the existing step. These are the ×√2 rungs
+  // between them, and every one of the original six stays exactly where it was.
+  //
+  //   160  226  320  452  640  905  1200  1810  2400  3620  5000  7240
+  //
+  // The tightest neighbouring ratio in the merged table is 1.33 (905→1200 and
+  // 1810→2400); everything else is 1.38–1.51. That is the whole reason twelve
+  // rungs still separate by ear where six ad-hoc additions would not have.
+  //
+  // Waveforms alternate so no two adjacent rungs share one, which is what
+  // carries the distinction where the pitch gap is narrowest. That is why
+  // several of these are sine rather than the shape they would have had alone:
+  // 452 and 905 each sit beside Overclock's square, and 3620 sits between
+  // Lance's triangle and Arc's square.
+  //
+  // Salvage takes 226 and has no combat band at all — the same structural
+  // position Overclock is in at 640. A station that never fires has no voice to
+  // preview, so the only thing left to get right is that arming it is
+  // distinguishable from arming anything else.
+  salvage: uiBlip(226, 'triangle'),
+  repulsor: uiBlip(452, 'sine'),
+  breaker: uiBlip(905, 'sine'),
+  ember: uiBlip(1810, 'square'),
+  sentinel: uiBlip(3620, 'sine'),
+  solvent: uiBlip(7240, 'triangle'),
 };
 
 function uiBlip(freq: number, wave: OscillatorType): SoundSpec {

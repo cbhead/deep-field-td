@@ -44,6 +44,7 @@ export const ENEMIES = {
     shield: 0,
     shieldRegenDelay: 0,
     shieldRegenRate: 0,
+    slowResist: 0,
     splitInto: null,
   },
 
@@ -59,6 +60,7 @@ export const ENEMIES = {
     shield: 0,
     shieldRegenDelay: 0,
     shieldRegenRate: 0,
+    slowResist: 0,
     // Must stay null: Cluster splits into Motes, and a Mote that split in turn
     // would never terminate.
     splitInto: null,
@@ -76,6 +78,7 @@ export const ENEMIES = {
     shield: 0,
     shieldRegenDelay: 0,
     shieldRegenRate: 0,
+    slowResist: 0,
     splitInto: null,
   },
 
@@ -91,6 +94,7 @@ export const ENEMIES = {
     shield: 30,
     shieldRegenDelay: 2.2,
     shieldRegenRate: 14,
+    slowResist: 0,
     splitInto: null,
   },
 
@@ -106,6 +110,7 @@ export const ENEMIES = {
     shield: 0,
     shieldRegenDelay: 0,
     shieldRegenRate: 0,
+    slowResist: 0,
     splitInto: { enemy: 'mote', count: 3 },
   },
 
@@ -126,9 +131,13 @@ export const ENEMIES = {
     bounty: 18,
     radius: 0.38,
     leakDamage: 1,
-    // Nova's 22 keeps 77% of its hit, Lance's 8 keeps 38%, and Singularity's 3
+    // Nova's 21 keeps 76% of its hit, Lance's 8 keeps 38%, and Singularity's 3
     // floors out. "Bad, not useless" is the target for Lance — it should be the
     // wrong tool here, not a wasted purchase.
+    //
+    // Nova was 22 and kept 77%. It is still the heavy-hit answer here, and no
+    // longer the only one: Solvent strips the plating rather than out-hitting
+    // it, which is what made trimming Nova affordable at all.
     //
     // Note what this does to upgrades. A Mk III Lance hits for 18 and keeps
     // 72%, so armour roughly doubles what upgrading is worth and makes it beat
@@ -138,6 +147,82 @@ export const ENEMIES = {
     shield: 0,
     shieldRegenDelay: 0,
     shieldRegenRate: 0,
+    slowResist: 0,
+    splitInto: null,
+  },
+  ironclad: {
+    id: 'ironclad',
+    name: 'Ironclad',
+    // **Hull deliberately near a Drifter's**, and the note on Bulwark above is
+    // the reason: hull scales with the wave and armour does not, so a heavy
+    // armoured contact compounds two difficulties and ends up unkillable by
+    // anything but one station. Keeping the hull ordinary leaves the plating as
+    // the only question it asks — it just asks it much louder than Bulwark.
+    hp: 40,
+    speed: 1.1,
+    bounty: 26,
+    radius: 0.42,
+    leakDamage: 1,
+    // At 11, Nova's shot keeps about half, Lance's floors, and a Filament may as
+    // well not be firing. Solvent at Mk I leaves 7 and at Mk III leaves 3, which
+    // is the point of it: the answer is not a bigger gun, it is turning the guns
+    // you already have back on.
+    armor: 11,
+    shield: 0,
+    shieldRegenDelay: 0,
+    shieldRegenRate: 0,
+    slowResist: 0,
+    splitInto: null,
+  },
+
+  aegis: {
+    id: 'aegis',
+    name: 'Aegis',
+    hp: 30,
+    speed: 1.25,
+    bounty: 22,
+    radius: 0.36,
+    leakDamage: 1,
+    armor: 0,
+    // Warden is 30 shield on a 2.2s delay at 14/s. This is half again as much
+    // on a delay short enough that the gap which hands a Warden its shield back
+    // hands this one *all* of it — Warden punishes thin coverage, Aegis punishes
+    // any coverage that is not continuous.
+    //
+    // **Shield scales with hp per wave**, so 45 is roughly 339 effective by wave
+    // 10. That compounding is why this is the number most likely to be wrong and
+    // the first one to move if the arc gets ugly late.
+    shield: 45,
+    shieldRegenDelay: 1.4,
+    shieldRegenRate: 26,
+    slowResist: 0,
+    splitInto: null,
+  },
+
+  skimmer: {
+    id: 'skimmer',
+    name: 'Skimmer',
+    hp: 16,
+    speed: 3.4,
+    bounty: 8,
+    radius: 0.2,
+    leakDamage: 1,
+    armor: 0,
+    shield: 0,
+    shieldRegenDelay: 0,
+    shieldRegenRate: 0,
+    // **The cheap half of a flyer.** What a flying contact is actually *for* is
+    // being the one your slow-and-pierce line cannot hold; that is this field,
+    // and it costs one multiplication in `applySlow`. Real flight would cost
+    // `progress` its meaning, and `first` targeting ranks every contact by
+    // `progress` — plus a painted lane on all eight boards, plus an air/ground
+    // axis through four separate loops. It is a milestone, not a contact.
+    //
+    // It is also the second axis on which the roster's original degenerate pair
+    // is weak. A slow bunches contacts into a file and pierce is worth more the
+    // longer the file, so those two manufacture each other's best case. Armour
+    // was the first answer to that; this is the second, for one line.
+    slowResist: 1,
     splitInto: null,
   },
 } as const satisfies Record<string, EnemyDef>;

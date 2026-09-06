@@ -70,6 +70,19 @@ export interface EnemyDef {
   readonly shieldRegenRate: number;
 
   /**
+   * How much of an incoming slow this shrugs off. `0` feels it in full, `1` is
+   * total immunity.
+   *
+   * The second axis on which the roster's original degenerate pair is weak, and
+   * the cheaper of the two. A slow bunches contacts into a file and pierce is
+   * worth more the longer the file, so a slowing station manufactures exactly
+   * the condition that maximises a piercing one — see `armor` above, which is
+   * the first axis. Armour cost a whole mechanic; this costs one multiplication
+   * in `applySlow`.
+   */
+  readonly slowResist: number;
+
+  /**
    * What this breaks into when killed, or null.
    *
    * The named type must itself have `splitInto: null`. That is what makes
@@ -164,6 +177,127 @@ export interface TowerDef {
   readonly buffShotsPerSecond: number;
 
   /**
+   * Armour stripped per hit, the ceiling it accumulates to, and how long the
+   * strip lasts without a refresh. `0` for everything that does not strip.
+   *
+   * **Accumulates rather than refreshing to a maximum**, which is the opposite
+   * of how slow works and is deliberate: the feel is a plate being worn away by
+   * repeated hits, and a strip that jumped to its ceiling on the first hit would
+   * be a different mechanic wearing the same name. The ceiling comes off the
+   * *shot's* snapshot, so a station upgraded mid-stack does not retroactively
+   * deepen a strip already on a contact.
+   *
+   * Consumed by `effectiveDamage`'s `armor` argument in `sim/damage.ts`, which
+   * is why it adds no new path to `c.hp` — it changes an input to the one funnel
+   * rather than becoming a second one.
+   */
+  readonly shredPerHit: number;
+  readonly shredMax: number;
+  readonly shredSeconds: number;
+
+  /**
+   * Damage multiplier applied to the *shield* portion of a hit, and how long
+   * shield regeneration is held down afterwards. `1` and `0` for everything that
+   * is not a shield-breaker.
+   *
+   * The multiplier applies only where the hit meets shield; overflow into hull
+   * is divided back out, so a 3× breaker does not also triple the spillover once
+   * the shield pops. Without that division a breaker would be a general-purpose
+   * damage multiplier wearing a shield-shaped label.
+   *
+   * `shieldLockSeconds` is a second, longer hold on top of the `shieldRegenDelay`
+   * every hit already resets — the difference between suppressing regen while
+   * you keep firing and suppressing it because you *broke* something.
+   */
+  readonly shieldFactor: number;
+  readonly shieldLockSeconds: number;
+
+  /**
+   * Damage per burn tick and how long the burn lasts. `0` for everything that
+   * does not set fire to things.
+   *
+   * The only mechanic whose damage continues after the contact leaves reach,
+   * which is the entire reason it is worth having next to five stations that
+   * stop mattering the moment their target walks out of range.
+   *
+   * Ticks once a second (`BALANCE.burnTick`), not once a frame. The cadence is
+   * load-bearing rather than an optimisation: a 60Hz burn would reset
+   * `shieldTimer` every frame and so hold every Warden's shield at zero for
+   * free, flood the highest-frequency event in the game, and shrink each tick to
+   * a rounding error that `armorFloor` swallows. One honest bite a second keeps
+   * armour meaningful against it and keeps the burn-holds-a-shield-open
+   * interaction a decision rather than an accident.
+   *
+   * Refreshes and takes the higher damage, never stacks — the same rule the slow
+   * states, for the same reason.
+   */
+  readonly burnDamage: number;
+  readonly burnSeconds: number;
+
+  /**
+   * Tiles a hit shoves a contact back down its own lane, and the per-contact
+   * immunity window afterwards. `0` for everything that does not shove.
+   *
+   * **The cooldown is not optional.** Without it two shoving stations covering
+   * one corner is an infinite lock, which is the same class of failure the
+   * slow's refresh-never-stack rule exists to prevent — and a hard stop is the
+   * classic way a tower defense breaks.
+   *
+   * Shoving moves `progress`, which is what `first` targeting ranks by, so a
+   * shoved contact is also demoted out of the front of the queue. That is a
+   * consequence rather than a side effect and is half the reason to build one.
+   */
+  readonly knockbackTiles: number;
+  readonly knockbackCooldown: number;
+
+  /**
+   * Extra fraction of the bounty paid for any contact that dies within `range`.
+   * `0` for the eleven that do not deal in money.
+   *
+   * The first station whose output is cash rather than damage or a change to
+   * another station's numbers. Like the rate buff it **stacks by maximum, never
+   * by sum**: summing would make a lattice of them the dominant build, which is
+   * the one shape this roster keeps having to design away from.
+   *
+   * Paid inside `damageCreep`'s kill block so it cannot double-pay, and
+   * deliberately invisible to `sortieCost` — a defender's economy must not raise
+   * what an attacker pays to send.
+   */
+  readonly bountyBonus: number;
+
+  /**
+   * How many distinct contacts one trigger pull fires at. `1` for everything
+   * that shoots one thing.
+   *
+   * Distinct from `pierce`, `splashRadius` and `chainJumps`, all of which need
+   * their extra targets to be near *each other*: a line, a clump, a loose
+   * scatter. This one needs nothing at all — which is why it belongs to the
+   * station that also has no reach, where "the three most dangerous contacts
+   * anywhere" is a sentence the other eleven cannot say.
+   */
+  readonly volleyTargets: number;
+
+  /**
+   * Whether this station ignores `range` entirely and reaches the whole board.
+   *
+   * **The one station that is not a circle.** Every other entry in this file is
+   * a radius around a tile, so the decision they all pose is the same one —
+   * *where*. This one answers it in advance: placement is free, and what you buy
+   * instead is that nothing can ever be out of reach.
+   *
+   * The exchange is deliberately steep. It fires slowly, hits one contact at a
+   * time until its effect path says otherwise, and always picks the contact
+   * closest to the core — so it is the answer to *the leak*, and no answer at
+   * all to volume. A station that could not miss and also kept up would be the
+   * end of placement as a decision.
+   *
+   * `range` is meaningless when this is set, and the range upgrade track is
+   * withdrawn rather than sold as an inert purchase — see `hasRangePath`. That
+   * is the same posture Overclock takes toward its damage track.
+   */
+  readonly boardWide: boolean;
+
+  /**
    * The effect upgrade path: what this station's third upgrade track improves,
    * on top of the damage and range tracks every station shares.
    *
@@ -240,6 +374,20 @@ export type TowerStats = Pick<
   // In `TowerStats` and not merely on the def, so the effect path can deepen it
   // through the existing `perTier` loop in `computeStats` with no new code.
   | 'buffShotsPerSecond'
+  // Same reason, one line each: every mechanic a station is *for* has to be
+  // reachable by that station's effect path, or its third upgrade track would
+  // have nothing to buy.
+  | 'shredPerHit'
+  | 'shredMax'
+  | 'shredSeconds'
+  | 'shieldFactor'
+  | 'shieldLockSeconds'
+  | 'burnDamage'
+  | 'burnSeconds'
+  | 'knockbackTiles'
+  | 'knockbackCooldown'
+  | 'bountyBonus'
+  | 'volleyTargets'
 >;
 
 /** One burst of identical enemies inside a wave. */

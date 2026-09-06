@@ -139,6 +139,17 @@ export function computeStats(defId: TowerId, tiers: TowerTiers): TowerStats {
     rampPerSecond: def.rampPerSecond,
     rampMax: def.rampMax,
     buffShotsPerSecond: def.buffShotsPerSecond,
+    shredPerHit: def.shredPerHit,
+    shredMax: def.shredMax,
+    shredSeconds: def.shredSeconds,
+    shieldFactor: def.shieldFactor,
+    shieldLockSeconds: def.shieldLockSeconds,
+    burnDamage: def.burnDamage,
+    burnSeconds: def.burnSeconds,
+    knockbackTiles: def.knockbackTiles,
+    knockbackCooldown: def.knockbackCooldown,
+    bountyBonus: def.bountyBonus,
+    volleyTargets: def.volleyTargets,
   };
 
   // Widened from the def's literal type: each station's `perTier` is a narrow
@@ -197,6 +208,34 @@ function refreshBuffs(w: World): void {
 }
 
 /**
+ * The extra fraction of bounty paid for a contact dying at `(x, y)`.
+ *
+ * **Maximum, never sum** — the same rule `refreshBuffs` follows, for the same
+ * reason and with a sharper edge. Summing would make overlapping salvage the
+ * dominant build on every board: a lattice of them costs nothing to arrange, and
+ * the payout would compound with the wave scaling that already grows bounty.
+ * Taking the maximum means a second one only ever widens the area it applies to.
+ *
+ * A pure query rather than cached state on the creep, because a station can be
+ * built, sold or upgraded between a contact spawning and dying — and the right
+ * answer is what is standing at the moment of the kill.
+ *
+ * O(towers) per kill, which is the same order `chain` and `detonate` already pay
+ * at impact and against far fewer entities.
+ */
+export function salvageBonus(w: World, x: number, y: number): number {
+  let best = 0;
+  for (const t of w.towers) {
+    const add = t.stats.bountyBonus;
+    if (add <= best) continue;
+    const dx = t.x - x;
+    const dy = t.y - y;
+    if (dx * dx + dy * dy <= t.stats.range * t.stats.range) best = add;
+  }
+  return best;
+}
+
+/**
  * What the stats would be after buying the next tier of `path`, or null at the
  * ceiling. The inspector prices its three buttons off this, so the preview is
  * computed by the same function the purchase will run.
@@ -234,6 +273,7 @@ export function upgradeCost(
   // that provably cannot move a number the sim reads — a money sink, not a
   // decision. Priced as unavailable rather than left to sell nothing.
   if (path === 'damage' && !hasDamagePath(t.defId)) return null;
+  if (path === 'range' && !hasRangePath(t.defId)) return null;
   const tier = t.tiers[path];
   // The ceiling defaults to the global maximum, which is what the campaign and
   // Race always pass. Versus passes `tierCeiling(w)` so the era caps it.
@@ -247,6 +287,16 @@ export function upgradeCost(
  * HUD deciding that for itself would drift from what `upgradeCost` allows.
  */
 export const hasDamagePath = (defId: TowerId): boolean => TOWERS[defId].damage > 0;
+
+/**
+ * Whether this station's range track buys anything.
+ *
+ * False for the one station that has no radius: selling a reach upgrade to a
+ * station defined by having no reach is exactly the inert purchase `towers.ts`
+ * refuses to ship. Same shape and same reason as `hasDamagePath` above, which
+ * is what withdraws Overclock's damage button.
+ */
+export const hasRangePath = (defId: TowerId): boolean => !TOWERS[defId].boardWide;
 
 /**
  * Seconds between a station's shots, support included.
@@ -280,6 +330,7 @@ export function upgradeError(
   // Checked before `upgradeCost` returns its null, because the two nulls mean
   // different things and only this one can tell them apart.
   if (path === 'damage' && !hasDamagePath(t.defId)) return 'noSuchPath';
+  if (path === 'range' && !hasRangePath(t.defId)) return 'noSuchPath';
   const cost = upgradeCost(t, path, tierCeiling(w));
   if (cost === null) return 'maxTier';
   if (w.money < cost) return 'tooPoor';

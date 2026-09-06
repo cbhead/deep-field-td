@@ -27,6 +27,16 @@ export function applyCommands(w: World): void {
         beginWave(w);
         break;
 
+      // Refused where the mode does not offer it, rather than trusted from the
+      // caller — the same posture every other branch here takes. Versus is the
+      // only such mode; see `Rules.autoStart`.
+      case 'setAutoStart': {
+        const on = cmd.on && w.rules.autoStart;
+        w.wave.autoStart = on;
+        w.events.push({ type: 'autoStartSet', on });
+        break;
+      }
+
       case 'advanceEra': {
         const reason = advanceEraError(w);
         if (reason !== null) {

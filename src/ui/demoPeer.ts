@@ -129,12 +129,12 @@ export function startDemoPeer(mount: HTMLElement, hudRoot: HTMLElement, world: W
     // step, which would read as one event drawn twice.
     if (sinceIncoming >= 11) {
       sinceIncoming = 0;
-      const id = SORTIE_IDS[Math.floor(rand() * Math.min(3, SORTIE_IDS.length))];
+      const id = SORTIE_IDS[Math.floor(rand() * SORTIE_IDS.length)];
       if (id !== undefined) hud.incoming(id, Math.floor(rand() * map.routes.length));
     }
     if (sinceSent >= 17) {
       sinceSent = 0;
-      const id = SORTIE_IDS[Math.floor(rand() * Math.min(3, SORTIE_IDS.length))];
+      const id = SORTIE_IDS[Math.floor(rand() * SORTIE_IDS.length)];
       if (id !== undefined) hud.sent(id, Math.floor(rand() * map.routes.length));
     }
   }, 500);

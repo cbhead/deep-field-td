@@ -277,7 +277,7 @@ kbd {
   left: 0;
   right: 0;
   top: calc(var(--top-h, 0px) + var(--board-h, 0px));
-  height: var(--deck-h, 150px);
+  height: var(--deck-h, 200px);
 }
 
 .deck .panel {
@@ -319,11 +319,34 @@ kbd {
   background: linear-gradient(to bottom, transparent, var(--panel-edge), transparent);
 }
 
-.slots { display: flex; gap: 8px; }
+/* Twelve stations, six wide and two deep.
+
+   **Grid rather than flex-wrap, and that is load-bearing.** `.slots` shares its
+   flex row with `.detail { flex: 1 }`, so a wrapping flex container would break
+   at whatever width it happened to be handed — a narrow window or the docked
+   panel could silently reflow to 5+7 or 4+4+4, and the checker cannot measure a
+   layout whose width it has to guess. Pinning the column count makes the row
+   width a constant: 6*78 + 5*8 = 508px, byte for byte what six slots in one row
+   cost. That is why doubling the roster spends no horizontal budget at all, and
+   why the gate that used to police width now policies height. */
+.slots {
+  display: grid;
+  grid-template-columns: repeat(6, 78px);
+  grid-auto-rows: 74px;
+  gap: 8px;
+}
+
+/* The second row opens its flyouts upward — there is no stage below them.
+   A row-2 slot sits at y≈186 of a 200px deck, so a downward flyout would run
+   about 95px past the bottom of the letterbox. */
+.slots > :nth-child(n+7) .fly { top: auto; bottom: -4px; }
 
 .slot {
   position: relative;
-  width: 78px; height: 86px;
+  /* 74 rather than 86: two rows have to fit a deck that grew by 50px, not 100.
+     Still well over TAP_PX, and it holds all three things a slot carries — the
+     kbd/cost corner row, the 40px glyph, and the shortfall line. */
+  width: 78px; height: 74px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -369,7 +392,9 @@ kbd {
 .slot.poor .glyph { opacity: .8; }
 .slot .short {
   position: absolute;
-  left: 0; right: 0; bottom: 20px;
+  /* 12 rather than 20, following the slot down from 86px to 74px — it keeps the
+     same slight overlap with the glyph the taller slot had. */
+  left: 0; right: 0; bottom: 12px;
   font-size: 9.5px;
   font-weight: 600;
   text-align: center;
@@ -592,6 +617,33 @@ button.path:hover { border-color: var(--accent); }
 .send .send-btn { padding: 11px 18px; font-size: 13px; border-radius: 8px; }
 .send .send-btn.primary { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent); }
 .send .hint { font-size: 10.5px; color: var(--dim); }
+
+/* The standing order, directly under the single one it repeats.
+
+   Deliberately quieter than Send: it is a mode you leave set, not a button you
+   press every wave, and a second primary control beside the first would compete
+   for the same glance. Armed it takes the accent — a setting that is changing
+   the economy every eight seconds has to be visible without being hunted for. */
+.auto-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--slot) 70%, transparent);
+  color: var(--muted);
+}
+.auto-start kbd { border: 0; padding: 0; font-size: 9.5px; color: var(--dim); }
+.auto-start:hover { border-color: var(--muted); }
+.auto-start.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--bright);
+}
+.auto-start.on kbd { color: var(--muted); }
 
 .handle {
   display: inline-flex;
@@ -963,8 +1015,15 @@ button.path:hover { border-color: var(--accent); }
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: auto;
-  max-height: 150px;
-  overflow-x: auto;
+  /* Follows DECK_PX. The overlay goes from about 22% to 29% of a 331px-tall
+     viewport while open, which is survivable on exactly the grounds above: it
+     starts closed and closes itself when a wave starts.
+
+     `overflow` rather than `overflow-x`, and that is a real fix rather than
+     tidying — with only the horizontal axis scrollable, a second row taller
+     than the cap clips with no scrollbar to reveal it. */
+  max-height: 200px;
+  overflow: auto;
 }
 /* Versus's second row needs the height it was wrapped to get. Compact overlays
    rather than reserving, so this costs no board — and the cap staying finite
@@ -1167,17 +1226,33 @@ button.path:hover { border-color: var(--accent); }
   overflow: hidden;
 }
 
-/* The build column is a column: one slot per row, filling the height. */
+/* The build column is two columns of six, filling the height.
+
+   It was one column of one slot per row, which at twelve stations gives 49.8px
+   a slot — 42.5 CSS px once the docked stage is scaled on a 1440-wide window.
+   That is under the 44px convention and far under TAP_PX, and nothing asserted
+   a minimum slot height, so it would have degraded into unhittable controls with
+   no gate saying so. Two columns keeps each slot at the 106.5px it has today and
+   spends the difference on `DOCK_BUILD_PX`, which is a board-scale cost that at
+   least shows up in the stage arithmetic.
+
+   Grid rather than a wrapping flex column for the same reason `.slots` above is
+   a grid: the column count has to be a fact, not an outcome. */
 .td-docked .docks .build .slots {
-  flex-direction: column;
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: 1fr;
   height: calc(100% - 20px);
   gap: 7px;
 }
 .td-docked .docks .build .slot {
   width: auto;
   height: auto;
-  flex: 1;
 }
+/* The left column's flyout has to clear the right column, not sit under it. */
+.td-docked .docks .build .slots > :nth-child(odd) .fly { left: calc(200% + 18px); }
+/* ...and the docked column is tall, so row-2's upward flip does not apply here:
+   every slot has stage above and below it. Undo the campaign deck's rule. */
+.td-docked .docks .build .slots > :nth-child(n+7) .fly { top: -4px; bottom: auto; }
 .td-docked .docks .build h6 { text-align: center; }
 
 /* --------------------------------------------- versus · top bar and flyout */

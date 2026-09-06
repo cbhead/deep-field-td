@@ -108,6 +108,38 @@ export class Overlay {
   }
 
   /**
+   * The reach of a station, drawn as either a circle or the board edge.
+   *
+   * **A rangeless station cannot be drawn as a circle of radius 0.** That is a
+   * degenerate shape that renders as nothing, and "nothing" is what a broken
+   * control looks like — every other station answers "how far" with a ring, so
+   * the one that answers "all of it" has to say so rather than stay silent.
+   * Outlining the play area is the same sentence in the same visual language.
+   */
+  private drawReachOf(
+    w: World,
+    defId: TowerId,
+    cx: number,
+    cy: number,
+    radius: number,
+    color: number,
+    fillAlpha: number,
+    strokeAlpha: number,
+  ): void {
+    if (TOWERS[defId].boardWide) {
+      this.gfx
+        .rect(0, 0, w.map.cols * TILE_PX, w.map.rows * TILE_PX)
+        .fill({ color, alpha: fillAlpha })
+        .stroke({ width: THEME.shape.strokeWidth, color, alpha: strokeAlpha });
+      return;
+    }
+    this.gfx
+      .circle(cx, cy, radius)
+      .fill({ color, alpha: fillAlpha })
+      .stroke({ width: THEME.shape.strokeWidth, color, alpha: strokeAlpha });
+  }
+
+  /**
    * @param callout Show the magnified plate above the tile. Defaults off, so
    *   the mouse path through here is byte-identical to what it always was.
    */
@@ -158,14 +190,16 @@ export class Overlay {
     if (inspected !== undefined) {
       const ix = inspected.x * TILE_PX;
       const iy = inspected.y * TILE_PX;
-      this.gfx
-        .circle(ix, iy, inspected.stats.range * TILE_PX)
-        .fill({ color: THEME.feedback.selected, alpha: THEME.feedback.rangeFillAlpha })
-        .stroke({
-          width: THEME.shape.strokeWidth,
-          color: THEME.feedback.selected,
-          alpha: THEME.feedback.rangeStrokeAlpha,
-        });
+      this.drawReachOf(
+        w,
+        inspected.defId,
+        ix,
+        iy,
+        inspected.stats.range * TILE_PX,
+        THEME.feedback.selected,
+        THEME.feedback.rangeFillAlpha,
+        THEME.feedback.rangeStrokeAlpha,
+      );
       this.gfx
         .rect(inspected.col * TILE_PX, inspected.row * TILE_PX, TILE_PX, TILE_PX)
         .stroke({ width: 2, color: THEME.feedback.selected, alpha: 0.95 });
@@ -229,10 +263,16 @@ export class Overlay {
 
     // Range first, so the ghost sits on top of it.
     const { rangeFillAlpha, rangeStrokeAlpha, tileOutlineAlpha } = THEME.feedback;
-    this.gfx
-      .circle(cx, cy, TOWERS[selected].range * TILE_PX)
-      .fill({ color: tint, alpha: rangeFillAlpha })
-      .stroke({ width: THEME.shape.strokeWidth, color: tint, alpha: rangeStrokeAlpha });
+    this.drawReachOf(
+      w,
+      selected,
+      cx,
+      cy,
+      TOWERS[selected].range * TILE_PX,
+      tint,
+      rangeFillAlpha,
+      rangeStrokeAlpha,
+    );
 
     // A tile outline reads as "this exact square", which the soft range circle
     // alone does not communicate.

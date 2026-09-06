@@ -19,6 +19,7 @@ import {
   nextStats,
   visualTier,
   hasDamagePath,
+  hasRangePath,
   effectiveInterval,
   tierCeiling,
   advanceEraCost,
@@ -192,6 +193,9 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
       }
       case 'send':
         ports.dispatch({ type: 'startWave' });
+        break;
+      case 'autostart':
+        ports.dispatch({ type: 'setAutoStart', on: !w.wave.autoStart });
         break;
       case 'era':
         ports.dispatch({ type: 'advanceEra' });
@@ -417,8 +421,14 @@ function renderTop(w: World, speed: number, paused: boolean): string {
   let label: string;
   let fill: number;
   if (s.phase === 'intermission') {
-    label = `wave ${s.index + 1} · in ${Math.ceil(s.timer)}s`;
-    fill = 1 - Math.max(0, s.timer) / BALANCE.intermission;
+    // Armed auto-rush sends on the next tick, so a countdown here would be a
+    // number ticking toward something that will never happen — the ribbon would
+    // be lying for the whole frame it is visible. Say what is actually about to
+    // occur instead.
+    label = s.autoStart
+      ? `wave ${s.index + 1} · sending`
+      : `wave ${s.index + 1} · in ${Math.ceil(s.timer)}s`;
+    fill = s.autoStart ? 1 : 1 - Math.max(0, s.timer) / BALANCE.intermission;
   } else if (s.phase === 'spawning') {
     // A contact glyph rather than the word "alive": the deck is teaching this
     // vocabulary two rows down, and one dot the player already recognises beats
@@ -926,6 +936,25 @@ function mechanics(d: TowerStats): { glyph: string; words: string }[] {
     out.push({ glyph: `×${Number(d.rampMax.toFixed(2))}`, words: `Ramps to x${d.rampMax} on one target` });
     out.push({ glyph: `${seconds.toFixed(1)}s`, words: `over ${seconds.toFixed(1)} seconds` });
   }
+  if (d.shredPerHit > 0) {
+    out.push({ glyph: `⌀${Number(d.shredMax.toFixed(1))}`, words: `Strips ${Number(d.shredMax.toFixed(1))} armour` });
+  }
+  if (d.shieldFactor > 1) {
+    out.push({ glyph: `⛨×${Number(d.shieldFactor.toFixed(1))}`, words: `x${Number(d.shieldFactor.toFixed(1))} into shields` });
+  }
+  if (d.burnDamage > 0) {
+    out.push({ glyph: `♨${Number(d.burnDamage.toFixed(0))}`, words: `Burns ${Number(d.burnDamage.toFixed(0))} a second` });
+    out.push({ glyph: `${d.burnSeconds.toFixed(0)}s`, words: `for ${d.burnSeconds.toFixed(0)} seconds` });
+  }
+  if (d.knockbackTiles > 0) {
+    out.push({ glyph: `↤${d.knockbackTiles.toFixed(1)}`, words: `Shoves back ${d.knockbackTiles.toFixed(1)} tiles` });
+  }
+  if (d.bountyBonus > 0) {
+    out.push({ glyph: `+${Math.round(d.bountyBonus * 100)}%`, words: `Pays ${Math.round(d.bountyBonus * 100)}% more bounty` });
+  }
+  if (d.volleyTargets > 1) {
+    out.push({ glyph: `⋔${d.volleyTargets}`, words: `Fires at ${d.volleyTargets} at once` });
+  }
   return out;
 }
 
@@ -1016,7 +1045,9 @@ function axisChips(d: TowerStats, verbose = false, fed?: number): string {
     `<span class="axes">` +
     (shoots ? chip('Damage per shot', 'dmg', formatDamage(d.damage)) : '') +
     (shoots ? rateChip : '') +
-    chip('Reach in tiles', 'reach', `${d.range.toFixed(1)}tl`) +
+    (d.range > 0
+      ? chip('Reach in tiles', 'reach', `${d.range.toFixed(1)}tl`)
+      : chip('Reaches the whole board', 'reach', '∞')) +
     `</span>`
   );
 }
@@ -1130,7 +1161,13 @@ export function renderInspector(w: World, t: Tower): string {
  * runs — so the button can never promise a number the sim won't deliver.
  */
 function renderPathButtons(w: World, t: Tower): string {
-  return UPGRADE_PATHS.filter((path) => path !== 'damage' || hasDamagePath(t.defId)).map((path) => {
+  // Both withdrawals, not just the one. A station with no radius has no range
+  // track for the same reason a station with no damage has no damage track:
+  // the button would price a purchase that changes nothing.
+  return UPGRADE_PATHS.filter(
+    (path) =>
+      (path !== 'damage' || hasDamagePath(t.defId)) && (path !== 'range' || hasRangePath(t.defId)),
+  ).map((path) => {
     const ceiling = tierCeiling(w);
     const cost = upgradeCost(t, path, ceiling);
     const next = nextStats(t, path, ceiling);
@@ -1433,7 +1470,31 @@ function renderSend(w: World): string {
     `<button class="btn send-btn primary" data-act="send">Send wave ${s.index + 1}` +
     (bonus > 0 ? ` <em>+$${bonus}</em>` : '') +
     `</button>` +
+    renderAutoStart(w) +
     `<span class="hint">Sending early pays the remaining timer as cash</span>`
+  );
+}
+
+/**
+ * The standing order to send every wave the moment it is available.
+ *
+ * Sits beside Send rather than in the preferences row, and that placement is the
+ * argument: everything in preferences changes what the player *sees*, where this
+ * changes what the game does and what it pays. The decision it belongs to is the
+ * one being made right here, looking at a timer and a bonus.
+ *
+ * Emits nothing where the mode does not offer it, so versus renders exactly what
+ * it did before — the same posture `renderSortieDeck` takes in reverse.
+ */
+function renderAutoStart(w: World): string {
+  if (!w.rules.autoStart) return '';
+  const on = w.wave.autoStart;
+  return (
+    `<button class="auto-start${on ? ' on' : ''}" data-act="autostart"` +
+    ` aria-pressed="${on}"` +
+    ` aria-label="Send every wave automatically${on ? ', on' : ', off'}">` +
+    `<kbd>⇧Space</kbd> Auto` +
+    `</button>`
   );
 }
 

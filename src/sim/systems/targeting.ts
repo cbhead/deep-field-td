@@ -1,9 +1,10 @@
+import { TOWERS } from '../../content/towers.ts';
 import type { TowerStats } from '../../content/types.ts';
 // `effectiveInterval` lives in `build.ts`, not here beside the loop that uses
 // it: the inspector prints the same figure and presentation may not import
 // `sim/systems/**`. See its comment there.
 import { effectiveInterval } from '../build.ts';
-import type { Creep, TargetMode, Tower } from '../types.ts';
+import type { Creep, EntityId, TargetMode, Tower } from '../types.ts';
 import type { World } from '../world.ts';
 
 /**
@@ -85,36 +86,62 @@ export function fireTowers(w: World, dt: number): void {
       t.focusTime *= RAMP_CARRY;
     }
 
-    const aim = aimPoint(t, best, s.pierce > 0);
+    // One trigger pull, one or more shots. A station with `volleyTargets: 1` —
+    // eleven of the twelve — runs this loop exactly once and produces byte-for-
+    // byte what it did before the loop existed.
+    //
+    // Each pass excludes the contacts already taken this pull, so a volley
+    // spreads across distinct targets rather than putting three shots into the
+    // one thing at the front. Running out of targets ends the pull: the shots
+    // are not refunded and the scan is not repeated, which is the same rule
+    // `chain` follows when a jump finds nobody.
+    const volley = Math.max(1, s.volleyTargets);
+    const taken: EntityId[] = [best.id];
 
-    w.projectiles.push({
-      id: w.nextId++,
-      defId: t.defId,
-      towerId: t.id,
-      // The station's current stats, carried whole: impact behaviour reads the
-      // shot's snapshot, not the def, which is what lets the effect path change
-      // what a station *does* rather than only how hard it hits.
-      stats: s,
-      x: t.x,
-      y: t.y,
-      ox: t.x,
-      oy: t.y,
-      target: best,
-      tx: aim.x,
-      ty: aim.y,
-      speed: s.projectileSpeed,
-      // The ramp multiplies the tier's damage rather than replacing it, so an
-      // upgraded Filament ramps from a higher floor to a higher ceiling and the
-      // two systems stay independent.
-      damage: s.damage * rampFactor(t),
-      pierce: s.pierce,
-      hits: [],
-      age: 0,
-      dead: false,
-    });
+    for (let shot = 0; shot < volley; shot++) {
+      const at = shot === 0 ? best : pickTarget(w, t, taken);
+      if (at === undefined) break;
+      if (shot > 0) taken.push(at.id);
+
+      const aim = aimPoint(t, at, s.pierce > 0);
+
+      w.projectiles.push({
+        id: w.nextId++,
+        defId: t.defId,
+        towerId: t.id,
+        // The station's current stats, carried whole: impact behaviour reads the
+        // shot's snapshot, not the def, which is what lets the effect path change
+        // what a station *does* rather than only how hard it hits.
+        stats: s,
+        x: t.x,
+        y: t.y,
+        ox: t.x,
+        oy: t.y,
+        target: at,
+        tx: aim.x,
+        ty: aim.y,
+        speed: s.projectileSpeed,
+        // The ramp multiplies the tier's damage rather than replacing it, so an
+        // upgraded Filament ramps from a higher floor to a higher ceiling and the
+        // two systems stay independent.
+        //
+        // Safe to read once per pull: no station has both a ramp and a volley,
+        // and the ramp is keyed off the *first* target anyway.
+        damage: s.damage * rampFactor(t),
+        pierce: s.pierce,
+        hits: [],
+        age: 0,
+        dead: false,
+      });
+    }
 
     // Presentation only — nothing in the sim reads it, and it draws no random
     // numbers, so the seed still fixes the match completely.
+    //
+    // Once per *trigger*, not once per shot. A volley that fired three times
+    // would otherwise be the loudest station on a full board and the quietest on
+    // an empty one, which is backwards — and `towerFired` is documented as the
+    // cheapest possible record of the trigger being pulled.
     w.events.push({ type: 'towerFired', defId: t.defId, x: t.x, y: t.y });
 
     // `+=`, not `=`. Assigning would round every tower's fire rate up to a
@@ -218,7 +245,24 @@ function score(w: World, mode: TargetMode, c: Creep, d2: number): number {
 /** Tiles left between a contact and the goal, along its own lane. */
 const remaining = (w: World, c: Creep): number => w.map.routes[c.route]!.length - c.progress;
 
-function pickTarget(w: World, t: Tower): Creep | undefined {
+/**
+ * `exclude` is the contacts a multi-target pull has already taken.
+ *
+ * Empty for every station that fires once, so the scan below is unchanged for
+ * eleven of the twelve. `includes` over an array rather than a Set because the
+ * list is at most three long and never escapes the pull — building a Set per
+ * shot would cost more than the scan it saves.
+ */
+function pickTarget(w: World, t: Tower, exclude: readonly EntityId[] = []): Creep | undefined {
+  // **The one station that is not a circle.** `boardWide` reads from the def
+  // rather than from `stats` because it is not a number and nothing upgrades it
+  // — there is no "slightly less rangeless".
+  //
+  // The range test below is the only thing it changes. Scoring is untouched, and
+  // that matters: a station with no reach would be incoherent on any mode other
+  // than `first`, and `first` is already the default. It ends up preferring the
+  // contact closest to the core for the same reason every other station does.
+  const boardWide = TOWERS[t.defId].boardWide;
   const r2 = t.stats.range * t.stats.range;
 
   /**
@@ -240,7 +284,7 @@ function pickTarget(w: World, t: Tower): Creep | undefined {
       if (c.dead || c.id !== t.focusId) continue;
       const dx = c.x - t.x;
       const dy = c.y - t.y;
-      if (dx * dx + dy * dy <= r2) return c;
+      if (boardWide || dx * dx + dy * dy <= r2) return c;
       break;
     }
   }
@@ -249,11 +293,11 @@ function pickTarget(w: World, t: Tower): Creep | undefined {
   let bestScore = -Infinity;
 
   for (const c of w.creeps) {
-    if (c.dead) continue;
+    if (c.dead || exclude.includes(c.id)) continue;
     const dx = c.x - t.x;
     const dy = c.y - t.y;
     const d2 = dx * dx + dy * dy;
-    if (d2 > r2) continue;
+    if (!boardWide && d2 > r2) continue;
 
     const s = score(w, t.targeting, c, d2);
     // Strictly greater, so ties go to the creep found first. That keeps the

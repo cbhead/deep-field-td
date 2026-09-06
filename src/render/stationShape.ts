@@ -160,6 +160,117 @@ export const STATION_MARKS: Readonly<Record<TowerId, StationMark>> = {
       [{ x: 0.7, y: 0.66 }, { x: 0.7, y: 0.3 }],
     ],
   },
+
+  /**
+   * Something being cut down to a floor — an arrow driven into a bar.
+   *
+   * The verb is *reduce*, not *hit*. This station's whole output is that a
+   * number on someone else goes down, so the mark has to point at a level rather
+   * than at a target, which is what separates it from every gun here.
+   */
+  solvent: {
+    ...NONE,
+    lines: [
+      [{ x: 0.28, y: 0.66 }, { x: 0.72, y: 0.66 }],
+      [{ x: 0.5, y: 0.28 }, { x: 0.5, y: 0.56 }],
+      [{ x: 0.4, y: 0.46 }, { x: 0.5, y: 0.56 }],
+      [{ x: 0.6, y: 0.46 }, { x: 0.5, y: 0.56 }],
+    ],
+  },
+
+  /**
+   * A ring broken open at two points — Nova's detonation ring, cracked.
+   *
+   * Deliberately the same radius as Nova's so the *gaps* are the whole signal.
+   * A shield is a ring around a contact in every other part of this game's
+   * language, so a broken ring is the one shape that says "overshield" without
+   * saying "blast".
+   */
+  breaker: {
+    ...NONE,
+    arcs: [
+      { r: 0.3, from: 20, span: 140 },
+      { r: 0.3, from: 200, span: 140 },
+    ],
+  },
+
+  /**
+   * A leading spark with its fire trailing behind and dying out.
+   *
+   * Trailing, not rising: the point of this station is that the damage keeps
+   * going *after* the contact has moved on, so the mark reads along the
+   * direction of travel rather than as a flame standing still.
+   */
+  ember: {
+    ...NONE,
+    lines: [
+      [{ x: 0.26, y: 0.62 }, { x: 0.36, y: 0.58 }],
+      [{ x: 0.42, y: 0.55 }, { x: 0.53, y: 0.5 }],
+      [{ x: 0.59, y: 0.48 }, { x: 0.68, y: 0.44 }],
+    ],
+    discs: [{ cx: 0.74, cy: 0.41, r: 0.045 }],
+  },
+
+  /**
+   * A shot arriving at a wall and stopping — the only mark here whose subject is
+   * the barrier rather than the projectile.
+   *
+   * The bar sits right of centre so the shot has road to arrive along, which is
+   * what makes it read as "pushed back" rather than merely "blocked".
+   */
+  repulsor: {
+    ...NONE,
+    lines: [
+      [{ x: 0.62, y: 0.3 }, { x: 0.62, y: 0.7 }],
+      [{ x: 0.26, y: 0.5 }, { x: 0.46, y: 0.5 }],
+    ],
+    discs: [{ cx: 0.46, cy: 0.5, r: 0.042 }],
+  },
+
+  /**
+   * A vault around something kept — a closed diamond with a core inside.
+   *
+   * The only closed polygon in the set, which is the point: this is the one
+   * station that produces nothing that travels, so its mark holds still and
+   * contains rather than pointing anywhere.
+   */
+  salvage: {
+    ...NONE,
+    lines: [
+      [
+        { x: 0.5, y: 0.3 },
+        { x: 0.7, y: 0.5 },
+        { x: 0.5, y: 0.7 },
+        { x: 0.3, y: 0.5 },
+        { x: 0.5, y: 0.3 },
+      ],
+    ],
+    discs: [{ cx: 0.5, cy: 0.5, r: 0.05 }],
+  },
+
+  /**
+   * A reticle closing on a core from four sides.
+   *
+   * **Detached ticks, and that is the whole idea.** Every other mark in this set
+   * draws something the station *does* — a shot, a blast, a jump, a burn. This
+   * one draws the absence of a boundary: the ticks come from the rim and stop
+   * short, so nothing here encloses anything. It is the only station with no
+   * reach circle on the board, so its glyph had better not look like a circle.
+   *
+   * The pair to check at 40px is Salvage, which also carries a centre disc — but
+   * that one is a closed diamond around its core and this one is four separate
+   * strokes that never meet.
+   */
+  sentinel: {
+    ...NONE,
+    lines: [
+      [{ x: 0.2, y: 0.5 }, { x: 0.32, y: 0.5 }],
+      [{ x: 0.68, y: 0.5 }, { x: 0.8, y: 0.5 }],
+      [{ x: 0.5, y: 0.3 }, { x: 0.5, y: 0.4 }],
+      [{ x: 0.5, y: 0.6 }, { x: 0.5, y: 0.7 }],
+    ],
+    discs: [{ cx: 0.5, cy: 0.5, r: 0.06 }],
+  },
 };
 
 /** Stroke weight for a mark, as a fraction of the tile. Thin: it is a legend. */

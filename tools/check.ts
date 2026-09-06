@@ -13,11 +13,14 @@ import { readFileSync } from 'node:fs';
 import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { VERSUS } from '../src/content/maps/versus.ts';
 import {
+  DECK_PX,
   DOCK_BUILD_PX,
   DOCK_DETAIL_PX,
+  DOCK_ERA_PX,
   DOCK_GAP,
   DOCK_MARGIN,
   GRID_MASK_FLOOR,
+  TAP_PX,
   TILE_PX,
   gridMaskAt,
 } from '../src/render/constants.ts';
@@ -32,7 +35,7 @@ import { CAMPAIGN, VERSUS_LEVEL } from '../src/content/levels.ts';
 import { contactGlyphRadius, contactIcon } from '../src/ui/icons.ts';
 import { contactExtent, contactShape } from '../src/render/contactShape.ts';
 import { BALANCE } from '../src/content/balance.ts';
-import { WAVES } from '../src/content/waves.ts';
+import { WAVES, WAVES_FRONTLINE } from '../src/content/waves.ts';
 import { SORTIES, SORTIE_IDS } from '../src/content/sorties.ts';
 import {
   PROTOCOL_VERSION,
@@ -53,15 +56,20 @@ import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, ENEMY_IDS, type EnemyId } from '../src/content/enemies.ts';
 import {
   advanceEraCost,
+  buildTower,
+  computeStats,
   damageAtTier,
   effectiveInterval,
   isUnlocked,
+  hasRangePath,
   placementError,
+  salvageBonus,
   tierCeiling,
   upgradeCost,
   upgradeError,
   visualTier,
 } from '../src/sim/build.ts';
+import { placeAtProgress } from '../src/sim/systems/movement.ts';
 import { coverage, formatDamage, laneCoverage, toughestArmour } from '../src/sim/analysis.ts';
 import {
   UPGRADE_PATHS,
@@ -842,6 +850,111 @@ section('waves — sending early');
   const livingWaves = new Set(w.creeps.map((c) => c.wave));
   check(livingWaves.size >= 2, 'two waves can be on the board at once', `waves alive: ${[...livingWaves].join(', ')}`);
   check(w.wave.clearedThrough === -1, 'neither counts as cleared while creeps live');
+}
+
+// ---------------------------------------------------------------------------
+// AUTO-RUSH IS THE SAME DECISION, MADE STANDING.
+//
+// Waves already start on their own when the intermission runs out, so this is
+// not "start waves automatically" — it is the *rush*, armed permanently. That
+// makes it an economy change rather than a convenience, because the rush pays
+// `rushBonusPerSecond` for every second forfeited, and armed it forfeits all of
+// them on every wave.
+//
+// So the gates are about two things: that the money is exactly what a manual
+// rush at the same instant would have paid, and that turning it on cannot make
+// the wave machine skip, repeat or overrun the arc — the same three failures
+// `spamming startWave` is checked for above.
+// ---------------------------------------------------------------------------
+section('waves — auto-rush');
+
+{
+  const armed = (): World => {
+    const w = createWorld(map, 4242);
+    w.lives = 1_000_000;
+    w.commands.push({ type: 'setAutoStart', on: true });
+    stepWorld(w, DT);
+    return w;
+  };
+
+  {
+    const w = createWorld(map, 4242);
+    check(!w.wave.autoStart, 'a fresh world is not armed — this is opt-in');
+  }
+
+  // Full bonus: armed, the wave goes on the first tick of the intermission with
+  // the timer untouched, so the payout is the whole intermission.
+  {
+    const w = armed();
+    w.wave.phase = 'intermission';
+    w.wave.timer = BALANCE.intermission;
+    w.events.length = 0;
+    const before = w.money;
+    stepWorld(w, DT);
+    const rushed = w.events.find((e) => e.type === 'waveRushed');
+    const want = Math.round(BALANCE.intermission * BALANCE.rushBonusPerSecond);
+    check(
+      rushed !== undefined && rushed.bonus === want && w.money - before === want,
+      'an armed intermission pays the whole rush bonus',
+      `+${w.money - before} vs ${want}`,
+    );
+  }
+
+  // ...and it is the same number a hand on the key would have earned. The point
+  // is that auto-rush is not a discount or a premium, only a standing order.
+  {
+    const w = createWorld(map, 4242);
+    w.lives = 1_000_000;
+    w.wave.phase = 'intermission';
+    w.wave.timer = BALANCE.intermission;
+    w.events.length = 0;
+    const before = w.money;
+    w.commands.push({ type: 'startWave' });
+    stepWorld(w, DT);
+    const manual = w.money - before;
+    check(
+      manual === Math.round(BALANCE.intermission * BALANCE.rushBonusPerSecond),
+      'and exactly what a manual rush at the same instant pays',
+      `manual +${manual}`,
+    );
+  }
+
+  // Neither skips nor repeats, and stops at the end of the arc rather than
+  // running off it — the failure a per-tick trigger is most likely to have.
+  {
+    const w = armed();
+    const seen: number[] = [];
+    for (let i = 0; i < 60 * 400; i++) {
+      stepWorld(w, DT);
+      for (const ev of w.events) if (ev.type === 'waveStarted') seen.push(ev.wave);
+      w.events.length = 0;
+      if (w.wave.phase === 'done' && w.creeps.length === 0) break;
+    }
+    const expected = [...Array(waveCount(w.rules)).keys()];
+    check(
+      JSON.stringify(seen) === JSON.stringify(expected),
+      'armed, every wave starts exactly once and in order',
+      `${seen.length} of ${expected.length}`,
+    );
+    check(w.wave.phase === 'done', 'and the arc still ends rather than running past it');
+  }
+
+  // Disarming mid-run hands the clock back rather than stranding the wave.
+  {
+    const w = armed();
+    w.commands.push({ type: 'setAutoStart', on: false });
+    stepWorld(w, DT);
+    check(!w.wave.autoStart, 'it can be disarmed again');
+  }
+
+  // Versus refuses it at the command, not at the button — the sim never trusts
+  // the caller. See `Rules.autoStart` for why the mode is scoped out.
+  {
+    const w = createWorld(map, 4242, versusRules(VERSUS_LEVEL, 'standard'));
+    w.commands.push({ type: 'setAutoStart', on: true });
+    stepWorld(w, DT);
+    check(!w.wave.autoStart, 'versus refuses to arm it at all');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2721,13 +2834,28 @@ function rankedSpots(range: number): readonly (readonly [number, number])[] {
 section('contacts — content');
 
 {
+  // Scans every arc in the campaign plus Front Line, not just Switchback.
+  //
+  // It used to read `WAVES` alone — sector 1's ten-wave table — which quietly
+  // required every contact in the game to be introduced on the first board.
+  // That was fine while the roster was six and the table introduced six, and it
+  // stopped being fine at nine: the alternative was cramming three more types
+  // into waves 8-9 of an arc whose pacing `hpGrowth` is swept against, purely to
+  // satisfy a gate.
+  //
+  // Widening it makes the assertion *stronger* rather than weaker — it now
+  // covers nine tables instead of one — and it is honest about what the campaign
+  // actually is, which is eight sectors that teach in sequence. A contact
+  // introduced in sector 4 is still taught before it matters; it is just not
+  // taught on sector 1.
+  const tables = [...CAMPAIGN.map((l) => l.waves), WAVES_FRONTLINE];
   const used = new Set<string>();
-  for (const wv of WAVES) for (const gr of wv.groups) used.add(gr.enemy);
+  for (const table of tables) for (const wv of table) for (const gr of wv.groups) used.add(gr.enemy);
   const missing = ENEMY_IDS.filter((id) => !used.has(id));
   check(
     missing.length === 0,
-    'every contact type appears in the wave table',
-    missing.length ? `unused: ${missing.join(', ')}` : `${ENEMY_IDS.length} types`,
+    'every contact type appears somewhere in the campaign',
+    missing.length ? `unused: ${missing.join(', ')}` : `${ENEMY_IDS.length} types across ${tables.length} arcs`,
   );
 
   const unknown = [...used].filter((id) => !(ENEMY_IDS as string[]).includes(id));
@@ -2922,7 +3050,17 @@ section('inspector — armour readout');
 
   // A floored hit is small, not absent. Rounding it to a whole number renders
   // "0", which tells the player the station did nothing at all.
-  const floored = effectiveDamage(damageAtTier('singularity', 1), ENEMIES.bulwark.armor);
+  //
+  // Derived from the roster's *actual* weakest hit against its heaviest plating
+  // rather than naming Singularity and Bulwark. It used to name both, which kept
+  // passing after the roster doubled while quietly no longer testing the worst
+  // case — Ironclad's armour is more than twice Bulwark's, and Salvage's damage
+  // is below Singularity's.
+  const weakest = Math.min(
+    ...TOWER_IDS.filter((id) => TOWERS[id].damage > 0).map((id) => damageAtTier(id, 1)),
+  );
+  const heaviest = Math.max(...ENEMY_IDS.map((id) => ENEMIES[id].armor));
+  const floored = effectiveDamage(weakest, heaviest);
   check(
     Number(formatDamage(floored)) > 0,
     'a floored hit never renders as zero',
@@ -2960,6 +3098,271 @@ section('inspector — armour readout');
     'the inbound wave supplies the reference, flagged as inbound',
     `${ref?.defId} inbound=${ref?.inbound}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// THE SIX NEW MECHANICS, AND THE ONE RULE THEY ALL HAVE TO KEEP.
+//
+// `damageCreep` is the single place a contact can lose health, and that is what
+// makes a double bounty or a double death event impossible rather than merely
+// unlikely. Five of the six additions honour it for free — a multi-target pull is N
+// ordinary shots, shred changes the `armor` *argument*, a breaker changes how
+// `effective` is split, a shove moves a contact, salvage changes the payout
+// inside the kill block. Only the burn adds a new call site, so the burn is what
+// most of this section is about.
+//
+// The arithmetic gates matter as much as the behavioural ones. A shield
+// multiplier that forgot to divide its overflow back out would look correct on
+// a shielded contact and silently be a general damage multiplier on a bare one,
+// which is exactly the sort of thing that ships.
+// ---------------------------------------------------------------------------
+section('stations — shred, break, burn, shove, salvage, no range');
+
+{
+  // --- the shield multiplier, and that it still splits normally at 1 ---
+  {
+    const w = soloWorld();
+    const c = spawnCreep(w, 'warden', { hp: 100, shield: 45 });
+    damageCreep(w, c, 10, undefined, 3);
+    check(
+      c.shield === 15 && c.hp === 100,
+      'a 3x breaker spends a 10 hit as 30 shield and no hull',
+      `shield ${c.shield} · hp ${c.hp}`,
+    );
+    damageCreep(w, c, 10, undefined, 3);
+    check(
+      c.shield === 0 && Math.abs(c.hp - 95) < 1e-9,
+      'and the spill into hull is divided back out, not tripled with it',
+      `shield ${c.shield} · hp ${c.hp}`,
+    );
+  }
+  {
+    const w = soloWorld();
+    const c = spawnCreep(w, 'warden', { hp: 26, shield: 30 });
+    damageCreep(w, c, 50);
+    check(
+      c.shield === 0 && c.hp === 6,
+      'an ordinary hit splits shield then hull exactly as before',
+      `shield ${c.shield} · hp ${c.hp}`,
+    );
+  }
+
+  // --- shred comes off the plating, not onto the shot ---
+  {
+    const w = soloWorld();
+    const c = spawnCreep(w, 'bulwark');
+    const before = c.hp;
+    damageCreep(w, c, 8);
+    const plain = before - c.hp;
+    c.shred = 4;
+    const mid = c.hp;
+    damageCreep(w, c, 8);
+    check(
+      plain === 3 && mid - c.hp === 7,
+      'four points of strip turn a Lance hit on a Bulwark from 3 into 7',
+      `${plain} → ${mid - c.hp}`,
+    );
+  }
+
+  // --- the burn: cadence, the one funnel, and cleaning up after itself ---
+  {
+    const w = soloWorld();
+    const c = spawnCreep(w, 'monolith', { hp: 500 });
+    c.burnTimer = 4;
+    c.burnDamage = 5;
+    c.burnTick = BALANCE.burnTick;
+    let ticks = 0;
+    for (let i = 0; i < 60 * 5; i++) {
+      const hp = c.hp;
+      stepWorld(w, 1 / 60);
+      if (c.hp < hp) ticks++;
+    }
+    check(ticks === 4, 'a 4s burn lands exactly four ticks, not 240', `${ticks}`);
+    check(c.burnDamage === 0 && c.burnSource === null, 'and clears itself when it lapses');
+  }
+  {
+    const w = soloWorld();
+    const c = spawnCreep(w, 'drifter', { hp: 4, bounty: 50 });
+    c.burnTimer = 4;
+    c.burnDamage = 5;
+    c.burnTick = BALANCE.burnTick;
+    const before = w.money;
+    let kills = 0;
+    for (let i = 0; i < 180; i++) {
+      stepWorld(w, 1 / 60);
+      kills += w.events.filter((e) => e.type === 'creepKilled').length;
+      w.events.length = 0;
+    }
+    check(kills === 1, 'a burn kill fires exactly one death event', `${kills}`);
+    check(w.money - before === 50, 'and pays its bounty exactly once', `+${w.money - before}`);
+  }
+  {
+    // The tick order is what makes this work: statuses run before splits
+    // resolve, so a burn kill queues its children like any other kill.
+    const w = soloWorld();
+    const c = spawnCreep(w, 'cluster', { hp: 4 });
+    c.burnTimer = 4;
+    c.burnDamage = 5;
+    c.burnTick = BALANCE.burnTick;
+    for (let i = 0; i < 180; i++) {
+      stepWorld(w, 1 / 60);
+      w.events.length = 0;
+    }
+    check(
+      w.creeps.filter((x) => x.defId === 'mote').length === 3,
+      'a Cluster killed by fire still breaks into three',
+      `${w.creeps.filter((x) => x.defId === 'mote').length} motes`,
+    );
+  }
+
+  // --- the shove is a pure function of progress, and clamps at the mouth ---
+  {
+    const w = soloWorld();
+    const c = spawnCreep(w, 'drifter');
+    placeAtProgress(w, c, 6);
+    const at6 = { x: c.x, y: c.y, leg: c.leg };
+    placeAtProgress(w, c, 5.1);
+    check(c.progress === 5.1, 'a shove writes progress and position together', `leg ${c.leg}`);
+    placeAtProgress(w, c, 6);
+    check(
+      Math.abs(c.x - at6.x) < 1e-9 && Math.abs(c.y - at6.y) < 1e-9 && c.leg === at6.leg,
+      'and is exact enough to round-trip — no drift across a shove',
+    );
+    placeAtProgress(w, c, -50);
+    check(c.progress === 0, 'a shove past the lane mouth clamps rather than going behind it');
+  }
+
+  // --- salvage pays, takes the max, and two of them are not two payouts ---
+  {
+    const w = soloWorld();
+    w.money = 100_000;
+    w.wave.index = 20;
+    let placed = 0;
+    for (let r = 0; r < map.rows && placed < 2; r++) {
+      for (let col = 0; col < map.cols && placed < 2; col++) {
+        if (placementError(w, 'salvage', col, r) === null) {
+          buildTower(w, 'salvage', col, r);
+          placed++;
+        }
+      }
+    }
+    const near = w.towers[0]!;
+    check(
+      placed === 2 && Math.abs(salvageBonus(w, near.x, near.y) - TOWERS.salvage.bountyBonus) < 1e-9,
+      'two overlapping salvage stations pay the max, never the sum',
+      `${salvageBonus(w, near.x, near.y)}`,
+    );
+
+    const before = w.money;
+    const c = spawnCreep(w, 'drifter', { hp: 1, bounty: 100 });
+    c.x = near.x;
+    c.y = near.y;
+    damageCreep(w, c, 10);
+    check(w.money - before === 135, 'a kill inside the reach pays bounty x1.35', `+${w.money - before}`);
+
+    const far = spawnCreep(w, 'drifter', { hp: 1, bounty: 100 });
+    far.x = -50;
+    far.y = -50;
+    const mid = w.money;
+    damageCreep(w, far, 10);
+    check(w.money - mid === 100, 'and one outside it pays the plain bounty', `+${w.money - mid}`);
+  }
+
+  // --- the one station with no radius ---
+  //
+  // Every other entry in the roster is a circle, so this is the only place the
+  // range test can be wrong in a way no other gate would notice: a Sentinel that
+  // quietly respected `range` would read as a station that never fires, and a
+  // `range: 0` station that respected it would fire at literally nothing.
+  {
+    const sentinel = TOWER_IDS.filter((id) => TOWERS[id].boardWide);
+    check(
+      sentinel.length === 1,
+      'exactly one station is rangeless',
+      sentinel.join(' ') || 'none',
+    );
+
+    const w = soloWorld();
+    w.money = 100_000;
+    w.wave.index = 20;
+    let tower;
+    for (let r = 0; r < map.rows && tower === undefined; r++) {
+      for (let col = 0; col < map.cols && tower === undefined; col++) {
+        if (placementError(w, 'sentinel', col, r) === null) tower = buildTower(w, 'sentinel', col, r);
+      }
+    }
+
+    // Deliberately the far corner of the board — well outside any radius in the
+    // roster, and outside this station's own `range` of 0 by definition.
+    const far = spawnCreep(w, 'drifter', { hp: 5000 });
+    far.x = map.cols - 0.5;
+    far.y = map.rows - 0.5;
+    const reach = Math.hypot(far.x - tower!.x, far.y - tower!.y);
+    tower!.cooldown = 0;
+    w.projectiles.length = 0;
+    w.events.length = 0;
+    stepWorld(w, 1 / 60);
+    check(
+      w.projectiles.length === 1 && w.projectiles[0]!.target.id === far.id,
+      'it reaches a contact in the far corner, with a range of 0',
+      `${reach.toFixed(1)} tiles away · range ${TOWERS.sentinel.range}`,
+    );
+
+    // ...and it takes the one closest to the core, which is the only preference
+    // a station that can see everything can coherently have.
+    const behind = spawnCreep(w, 'drifter', { hp: 5000 });
+    behind.progress = far.progress - 6;
+    tower!.cooldown = 0;
+    w.projectiles.length = 0;
+    stepWorld(w, 1 / 60);
+    check(
+      w.projectiles.length === 1 && w.projectiles[0]!.target.id === far.id,
+      'and prefers the contact closest to the core over the one behind it',
+    );
+
+    // The effect path is what widens it, since a range path would be inert —
+    // and the range button is withdrawn rather than sold. Same posture as
+    // Overclock's damage track.
+    check(
+      !hasRangePath('sentinel') && hasRangePath('lance'),
+      'its range track is withdrawn, not sold as an inert purchase',
+    );
+    check(
+      upgradeError(w, tower!, 'range') === 'noSuchPath',
+      'and buying one is refused in its own words',
+      `got ${upgradeError(w, tower!, 'range')}`,
+    );
+
+    const maxed = computeStats('sentinel', { damage: 1, range: 1, effect: BALANCE.upgrade.maxTier });
+    check(
+      maxed.volleyTargets === 3,
+      'a Mk III Sentinel watches three contacts at once',
+      `${maxed.volleyTargets}`,
+    );
+
+    // Maxed, against contacts scattered to opposite corners rather than clumped:
+    // three shots, three distinct targets, and *one* report. A sound per shot
+    // would make this station loudest exactly when the board is worst.
+    tower!.stats = maxed;
+    const third = spawnCreep(w, 'drifter', { hp: 5000 });
+    third.x = 1.5;
+    third.y = map.rows - 1.5;
+    third.progress = far.progress - 12;
+    tower!.cooldown = 0;
+    w.projectiles.length = 0;
+    w.events.length = 0;
+    stepWorld(w, 1 / 60);
+    const hit = new Set(w.projectiles.map((p) => p.target.id)).size;
+    check(
+      w.projectiles.length === 3 && hit === 3,
+      'and puts one shot into each of three contacts, anywhere on the board',
+      `${w.projectiles.length} shots · ${hit} targets`,
+    );
+    check(
+      w.events.filter((e) => e.type === 'towerFired').length === 1,
+      'and still reports once per trigger, not once per shot',
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3087,6 +3490,13 @@ section('matchup matrix (informational)');
     monolith: { count: 3, every: 2.5 },
     warden: { count: 4, every: 1.6 },
     cluster: { count: 4, every: 1.6 },
+    // Each at the pressure its own question implies: a plated contact arrives
+    // few and slow, a shielded one in a stream that never gives regen a gap, and
+    // a Skimmer in numbers, fast, because being unslowable only matters when
+    // there are enough of them to matter.
+    ironclad: { count: 3, every: 2.4 },
+    aegis: { count: 4, every: 1.6 },
+    skimmer: { count: 12, every: 0.3 },
     bulwark: { count: 4, every: 1.9 },
   };
 
@@ -3148,7 +3558,9 @@ section('balance probe (informational)');
    * measures tower damage but says nothing about whether bounty income can
    * fund a defence, which is the actual question at M5.
    */
-  const SEEDS = [4242, 7, 999, 31337, 12345];
+  const SEED_POOL = [4242, 7, 999, 31337, 12345];
+  // `SEEDS=N` for a fast pass; a short run is a prefix of the long one.
+  const SEEDS = SEED_POOL.slice(0, Number(process.env['SEEDS'] ?? SEED_POOL.length));
 
   const play = (
     build: TowerId[],
@@ -3671,29 +4083,69 @@ section('hud · build slot states');
   // shrink the deck instead of clipping the send control. That has one
   // consequence worth pinning: a slot is a fixed 78px with an 8px gap
   // (`styles.css`), whatever the viewport, so adding a station never makes the
-  // existing slots smaller — it spends horizontal room.
+  // existing slots smaller — it spends room.
   //
-  //   6 slots -> 6*78 + 5*8 = 508px of the 1040 available
-  //   7 slots -> 7*78 + 6*8 = 594px, against a detail panel capped at 430px,
-  //              which leaves 16px for every gap and margin between them
+  // **Which room, is what changed when the roster doubled.** This gate used to
+  // read the budget as horizontal, and said so: six fitted in one row at
+  // 6*78 + 5*8 = 508px against a 430px detail panel, seven wanted 594px and did
+  // not fit, and therefore "a seventh station is a deck layout task first and a
+  // balance task second". That was correct and it is what happened — twelve
+  // stations in one row want 1024px, which is 414px over.
   //
-  // So six fits comfortably and seven does not, and the failure would appear as
-  // a clipped panel at *every* size rather than only on a phone. This is also
-  // why adding Overclock did not worsen the touch-target problem: slot width is
-  // constant, and that constraint is about the whole-composition scale factor.
+  // The layout answer was a 6x2 grid, and the interesting part is that it costs
+  // *nothing* horizontally: six columns is the same 508px one row of six was.
+  // So the width assertion below is now permanently slack, and the constraint
+  // that actually binds is height. Both are gated, because a budget nobody can
+  // exceed stops being a budget and starts being decoration.
   //
-  // A seventh station is therefore a deck layout task first and a balance task
-  // second. Wrapping the row, scrolling it, or shrinking the detail cap are all
-  // fine answers; discovering the problem from a screenshot is not.
+  //   width  6 wide  -> 6*78 + 5*8 = 508px of the 1040, +430 detail = 938
+  //   height 2 deep  -> 2*74 + 8 + 17.5 heading = 173.5px of DECK_PX's 200
+  //   3 rows         -> 255.5px, which is what a thirteenth station would want
+  //
+  // So a thirteenth station is still a deck layout task first. It just fails on
+  // the vertical gate now instead of the horizontal one.
   const SLOT_PX = 78;
   const SLOT_GAP = 8;
+  const SLOT_H = 74;
+  const SLOT_COLS = 6;
+  const HEADING_PX = 17.5;
   const DETAIL_CAP = 430;
   const LOGICAL_W = 1040;
-  const slotsWidth = TOWER_IDS.length * SLOT_PX + (TOWER_IDS.length - 1) * SLOT_GAP;
+  const slotRows = Math.ceil(TOWER_IDS.length / SLOT_COLS);
+  const perRow = Math.min(TOWER_IDS.length, SLOT_COLS);
+  const slotsWidth = perRow * SLOT_PX + (perRow - 1) * SLOT_GAP;
   check(
     slotsWidth + DETAIL_CAP <= LOGICAL_W,
-    'the deck row fits the logical board width',
-    `${TOWER_IDS.length} slots = ${slotsWidth}px + ${DETAIL_CAP}px detail vs ${LOGICAL_W}px`,
+    'the deck grid fits the logical board width',
+    `${perRow} wide = ${slotsWidth}px + ${DETAIL_CAP}px detail vs ${LOGICAL_W}px`,
+  );
+
+  const slotsHeight = slotRows * SLOT_H + (slotRows - 1) * SLOT_GAP + HEADING_PX;
+  check(
+    slotsHeight <= DECK_PX,
+    'and the deck grid fits the height it reserves',
+    `${slotRows} rows = ${slotsHeight}px vs ${DECK_PX}px`,
+  );
+
+  // The grid is declared `repeat(6, 78px)`, so a thirteenth station does not
+  // widen the row — it silently starts a third one inside a deck with no room
+  // for it. This is the assertion that makes that loud.
+  check(
+    TOWER_IDS.length <= SLOT_COLS * 2,
+    'the roster still fits two rows of six',
+    `${TOWER_IDS.length} stations`,
+  );
+
+  // TypeScript does not read CSS, and the whole width argument above rests on
+  // the column count being fixed. If `.slots` ever goes back to a wrapping flex
+  // container the arithmetic here keeps passing while the real layout rebreaks
+  // at whatever width it is handed. Same technique, and same justification, as
+  // the `pointer-events` gate further down.
+  check(
+    /\.slots\s*\{[^}]*grid-template-columns:\s*repeat\(6,/.test(
+      readFileSync(new URL('../src/ui/styles.css', import.meta.url), 'utf8'),
+    ),
+    'and the stylesheet pins six columns rather than wrapping',
   );
 
   // ---------------------------------------------------------------------------
@@ -3773,12 +4225,37 @@ section('hud · build slot states');
   );
   // The docked stage has to actually contain its docks, or the columns render
   // off the letterbox edge at every scale.
+  //
+  // 1685 → 1768 when the build dock went two columns wide to hold twelve
+  // stations. That is not free: a 1440-wide window scales the docked stage
+  // 0.855 → 0.814, so the board loses 4.8%, and nothing changes at 1768px or
+  // wider. It is the right trade only because the alternative was 42.5 CSS px
+  // build slots — see `DOCK_BUILD_PX`, which carries the arithmetic.
+  //
+  // An exact equality rather than a bound, on purpose: this is the one number
+  // that has to be re-derived by hand when any dock width moves, and a `<=`
+  // would let a shrinking dock drift without saying so.
   const stageW =
     DOCK_MARGIN + DOCK_BUILD_PX + DOCK_GAP + LOGICAL_W + DOCK_GAP + DOCK_DETAIL_PX + DOCK_MARGIN;
   check(
-    stageW === 1685,
+    stageW === 1768,
     'versus deck: the docked stage closes on its own arithmetic',
     `${DOCK_BUILD_PX} + ${LOGICAL_W} + ${DOCK_DETAIL_PX} + gaps = ${stageW}px`,
+  );
+
+  // The docked build dock is the one place a slot's height is an *outcome*
+  // rather than a constant — it is a grid filling a fixed column — so it is the
+  // one place a wider roster can silently produce unhittable controls. It did:
+  // twelve slots in one column is 49.8px, which is 42.5 CSS px once the stage is
+  // scaled on a 1440-wide window.
+  const DOCK_STAGE_H = 944;
+  const DOCK_BUILD_H = DOCK_STAGE_H - 82 - (DOCK_MARGIN + DOCK_ERA_PX + DOCK_GAP);
+  const dockSlotRows = Math.ceil(TOWER_IDS.length / 2);
+  const dockSlotH = (DOCK_BUILD_H - DOCK_MARGIN - 20 - (dockSlotRows - 1) * 7) / dockSlotRows;
+  check(
+    dockSlotH >= TAP_PX,
+    'versus deck: docked build slots clear the touch floor',
+    `${dockSlotRows} rows = ${dockSlotH.toFixed(1)}px vs ${TAP_PX}px`,
   );
   check(
     campaignDeck.includes('class="panel"') && !campaignDeck.includes('class="row"'),
@@ -3836,6 +4313,20 @@ section('hud · build slot states');
     'no two sorties share a key',
     sortieKeys.join(' '),
   );
+  // The same two assertions, mirrored onto the build deck. Only the sortie table
+  // was checked before, which was reasonable when it was the one that had grown
+  // — and then the build deck doubled and inherited two awkward keys (`-`, `=`)
+  // with nothing watching them.
+  check(
+    towerKeys.every((k) => k.length === 1),
+    'every station has a single-character hotkey',
+    towerKeys.join(' '),
+  );
+  check(
+    new Set(towerKeys).size === towerKeys.length,
+    'no two stations share a key',
+    towerKeys.join(' '),
+  );
   const clash = sortieKeys.filter((k) => towerKeys.includes(k));
   check(
     clash.length === 0,
@@ -3843,10 +4334,12 @@ section('hud · build slot states');
     clash.length === 0 ? `build ${towerKeys.join('')} · send ${sortieKeys.join('')}` : clash.join(' '),
   );
   // Reserved by the input layer for things that are not a purchase.
+  // Space is Send, Shift+Space arms auto-rush, Tab collapses the deck and Escape
+  // clears the selection. None of the four is a purchase.
   const reserved = ['tab', ' ', 'escape'];
   check(
-    sortieKeys.every((k) => !reserved.includes(k)),
-    'and none of them is a key the deck already owns',
+    [...sortieKeys, ...towerKeys].every((k) => !reserved.includes(k)),
+    'and no purchase key is one the deck already owns',
     reserved.join(' '),
   );
 

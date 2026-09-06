@@ -83,6 +83,22 @@ export const BALANCE = {
   rushBonusPerSecond: 2.5,
 
   /**
+   * Seconds between burn ticks. One, and the number is load-bearing.
+   *
+   * A burn that ticked at frame rate would be a different mechanic: it would
+   * reset `shieldTimer` sixty times a second and so hold every Warden's shield
+   * at zero for free, flood `creepDamaged` — the highest-frequency event in the
+   * game — and cut each tick small enough that `armorFloor` swallows it, which
+   * would quietly make burn ignore armour. Ticking once a second gives armour
+   * one honest bite per tick and leaves the shield interaction a readable
+   * decision rather than an accident.
+   *
+   * Here rather than in `sim/` because a cadence that changes how much damage
+   * lands is a balance number, and `content/` is where balance numbers live.
+   */
+  burnTick: 1,
+
+  /**
    * The era ladder. Versus only — the campaign hands stations out on
    * `TowerDef.unlockWave` and never reads any of this.
    *

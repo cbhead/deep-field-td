@@ -1,5 +1,6 @@
 import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
+import { salvageBonus } from './build.ts';
 import type { Creep, Tower } from './types.ts';
 import { waveStats, type World } from './world.ts';
 
@@ -33,7 +34,21 @@ import { waveStats, type World } from './world.ts';
 export const effectiveDamage = (amount: number, armor: number): number =>
   armor > 0 ? Math.max(amount * BALANCE.armorFloor, amount - armor) : amount;
 
-export function damageCreep(w: World, c: Creep, amount: number, source?: Tower): void {
+/**
+ * `shieldFactor` multiplies the hit where it meets *shield* only.
+ *
+ * A defaulted parameter of the one funnel rather than a second entry point, so
+ * every existing call site is byte-identical at 1 and nothing new reaches
+ * `c.hp`. That distinction is the whole reason a shield-breaker was safe to add:
+ * it changes how `effective` is divided, not how much of it there is.
+ */
+export function damageCreep(
+  w: World,
+  c: Creep,
+  amount: number,
+  source?: Tower,
+  shieldFactor = 1,
+): void {
   if (c.dead || c.hp <= 0) return;
 
   const def = ENEMIES[c.defId];
@@ -46,23 +61,37 @@ export function damageCreep(w: World, c: Creep, amount: number, source?: Tower):
   // Armour comes off the individual hit, before anything else can absorb it.
   // Splash arrives here too, which is deliberate — the falloff edge of a
   // detonation is a small hit and armour treats it like one.
-  const effective = effectiveDamage(amount, def.armor);
+  //
+  // `shred` is subtracted from the plating rather than added to the shot: a
+  // stripped Bulwark is easier for *everything* on the board, which is what
+  // makes stripping a support mechanic instead of a damage one.
+  const effective = effectiveDamage(amount, Math.max(0, def.armor - c.shred));
 
   // Shield absorbs next, and the overflow carries into the hull — so a single
   // heavy shot is not wasted on a thin shield the way it would be if the shield
   // simply ate the whole hit.
+  //
+  // Note the division on the way out. A 3× breaker removes three shield per
+  // point of `effective`, so the *effective* it has spent doing that is
+  // `toShield / shieldFactor` — dividing it back out is what stops the
+  // multiplier from also tripling what spills into hull once the shield pops.
+  // Without that, a shield-breaker would quietly be a general damage multiplier.
   let toHull = effective;
   let toShield = 0;
   if (c.shield > 0) {
-    toShield = Math.min(c.shield, toHull);
+    toShield = Math.min(c.shield, toHull * shieldFactor);
     c.shield -= toShield;
-    toHull -= toShield;
+    toHull -= toShield / shieldFactor;
     if (c.shield === 0) w.events.push({ type: 'shieldBroke', x: c.x, y: c.y });
   }
 
   // Credit shield and hull alike, but never more than was actually there, so
   // overkill on a 2hp creep doesn't inflate a tower's damage figure.
-  const landed = Math.min(effective, effective - toHull + c.hp);
+  //
+  // Written as the two parts summed rather than derived from `effective`, which
+  // is the same number at `shieldFactor: 1` and the honest one above it: a
+  // breaker that removed 30 points of shield did remove 30 points of shield.
+  const landed = toShield + Math.min(toHull, c.hp);
   c.hp -= toHull;
 
   if (source !== undefined) source.damageDealt += landed;
@@ -79,13 +108,24 @@ export function damageCreep(w: World, c: Creep, amount: number, source?: Tower):
   if (c.hp > 0) return;
 
   c.dead = true;
+
+  // What a salvage station overhead is worth, applied once and then used
+  // everywhere the bounty is — the wallet, the run total, the per-wave
+  // itemisation and the event. Computing it once is what stops the HUD's
+  // summary and the player's actual money disagreeing.
+  //
+  // Deliberately *not* visible to `sortieCost`, which prices a send off the
+  // def's scaled bounty: a defender's economy must not raise what an attacker
+  // pays to send at them.
+  const paid = Math.round(c.bounty * (1 + salvageBonus(w, c.x, c.y)));
+
   // Paid to whoever's board this is, which for a sortie means the *defender*
   // collects. That is the whole anti-spam valve of the duel economy and it
   // needs no code of its own: bounty has always been credited to the world the
   // contact died in, and a sortie dies in the world it was sent to.
-  w.money += c.bounty;
+  w.money += paid;
   w.stats.kills++;
-  w.stats.bounty += c.bounty;
+  w.stats.bounty += paid;
 
   // Run totals count every kill; the per-wave itemisation counts only what the
   // wave machine dispatched. A sortie has no wave to be itemised against, and
@@ -94,11 +134,11 @@ export function damageCreep(w: World, c: Creep, amount: number, source?: Tower):
   if (c.origin === 'wave') {
     const wave = waveStats(w, c.wave);
     wave.kills++;
-    wave.bounty += c.bounty;
+    wave.bounty += paid;
   }
 
   if (source !== undefined) source.kills++;
-  w.events.push({ type: 'creepKilled', x: c.x, y: c.y, bounty: c.bounty, defId: c.defId });
+  w.events.push({ type: 'creepKilled', x: c.x, y: c.y, bounty: paid, defId: c.defId });
 
   // Queued, never spawned here. `stepProjectiles` is iterating `w.creeps` when
   // this runs, and a push mid-iteration would let the very shot that made the
