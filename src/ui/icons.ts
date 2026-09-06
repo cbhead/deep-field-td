@@ -29,13 +29,18 @@ import {
  *
  * Everything is `currentColor`, so a caller sets `color` once on the slot and
  * the whole glyph follows — including the states where it dims.
+ *
+ * **No hub.** There used to be a filled disc at the centre, matching the one the
+ * bake grew with tier. It said what the collar already says by position, and it
+ * said it on top of the mark — so the two stations whose mark reaches the centre
+ * lost it to a decoration. Investment reads on the collar; the middle belongs to
+ * whatever the station actually does.
  */
 export function stationIcon(id: TowerId, size: number): string {
   const hex = 'M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z';
   return (
     `<svg class="glyph" width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true">` +
     `<path d="${hex}" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>` +
-    `<circle cx="20" cy="20" r="4" fill="currentColor"/>` +
     markSvg(id) +
     `</svg>`
   );

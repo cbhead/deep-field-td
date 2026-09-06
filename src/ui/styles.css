@@ -53,8 +53,12 @@ html, body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: var(--board-w, 100%);
-  height: calc(var(--top-h, 0px) + var(--board-h, 100%) + var(--deck-h, 0px));
+  /* --stage-w/h are the board's own box in every mode but versus, where the
+     four docks make the stage wider and taller than the board. The fallbacks
+     are the pre-dock expressions, so a stage rendered before the first
+     fitCanvas still lands where it always did. */
+  width: var(--stage-w, var(--board-w, 100%));
+  height: var(--stage-h, calc(var(--top-h, 0px) + var(--board-h, 100%) + var(--deck-h, 0px)));
   transform: translate(-50%, -50%) scale(var(--board-scale, 1));
 
   /* The board and its chrome are a control surface, not a document: no pan, no
@@ -94,8 +98,8 @@ html, body {
 /* The board sits between the two reserved strips. */
 #game-root {
   position: absolute;
-  left: 0;
-  top: var(--top-h, 0px);
+  left: var(--board-x, 0px);
+  top: var(--board-y, var(--top-h, 0px));
   width: var(--board-w, 100%);
   height: var(--board-h, 100%);
 }
@@ -1062,4 +1066,361 @@ button.path:hover { border-color: var(--accent); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ------------------------------------------------------- versus · the docks */
+
+/* Four panels around the board instead of one under it.
+
+   The two-row deck this replaces was already the compromise: five sections in
+   1008px of logical width, wrapped because they did not fit. Wrapping bought
+   room by spending height, and the inspector was still the narrowest thing on
+   screen while the sortie deck sat on top of the send control. Docking spends
+   width the letterbox was throwing away instead — the board is 1040 of a 1685
+   stage, and the 645px difference is the two columns.
+
+   Every offset here comes from a --dock-* custom property published by
+   fitCanvas, which reads the same constants that reserved the space. Nothing
+   overlaps the board at any scale, which is the whole reason this beats
+   floating the HUD over it: the design's own argument, and the one the two-row
+   deck was already conceding. */
+.td-docked .deck {
+  inset: 0;
+  height: auto;
+}
+.td-docked .deck .panel.docks {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Near-opaque, not translucent. Over a star field a see-through panel lets
+   background elements read as controls — a star behind a build slot looks like
+   a badge on it. The design puts the number at .93 and it is doing real work. */
+.td-docked .docks > section {
+  pointer-events: auto;
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: rgb(10 11 20 / .93);
+}
+
+.td-docked .docks .build {
+  left: var(--dock-margin);
+  top: var(--board-y);
+  width: var(--dock-build);
+  bottom: calc(var(--dock-margin) + var(--dock-era) + var(--dock-gap));
+  padding: 11px 9px 12px;
+}
+/* The era square is its own dock rather than a cell of the top bar. It is the
+   one control that is always a purchase and never a readout, and the top bar it
+   used to sit in is now carrying the wave. */
+.td-docked .docks .era {
+  left: var(--dock-margin);
+  bottom: var(--dock-margin);
+  width: var(--dock-build);
+  height: var(--dock-era);
+  padding: 9px;
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.td-docked .docks .sorties {
+  left: var(--board-x);
+  top: calc(var(--board-y) + var(--board-h) + var(--dock-gap));
+  width: var(--board-w);
+  bottom: var(--dock-margin);
+  padding: 11px 14px 13px;
+}
+/* Full height at the right, which is the point of it: this is the column that
+   was 68px wide in the wrapped deck. */
+.td-docked .docks .detail {
+  right: var(--dock-margin);
+  top: var(--board-y);
+  width: var(--dock-detail);
+  /* The 430px cap is the flex layout's, and it is the very thing being
+     escaped: in a row it stopped the inspector eating the deck, and docked
+     there is no row left to eat. Leaving it on would silently hold the column
+     38px under the width the stage already reserved for it. */
+  max-width: none;
+  flex: none;
+  bottom: var(--dock-margin);
+  padding: 14px 15px 15px;
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  overflow: hidden;
+}
+
+/* The build column is a column: one slot per row, filling the height. */
+.td-docked .docks .build .slots {
+  flex-direction: column;
+  height: calc(100% - 20px);
+  gap: 7px;
+}
+.td-docked .docks .build .slot {
+  width: auto;
+  height: auto;
+  flex: 1;
+}
+.td-docked .docks .build h6 { text-align: center; }
+
+/* --------------------------------------------- versus · top bar and flyout */
+
+/* The ribbon and the send control are one unit: the button is *about* the bar
+   beside it, and the rush bonus it prints is the bar's remaining time priced in
+   cash. Splitting them across the row would make the player join two things
+   that are one decision. */
+.ribbon-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.top-send {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--bright);
+  white-space: nowrap;
+}
+.top-send em { font-style: normal; color: var(--cash); }
+/* Spawning and done are readouts, not controls — no border, no press. */
+.top-send.flat {
+  border-color: transparent;
+  background: none;
+  color: var(--dim);
+}
+
+/* The wave overview: glyph and count per type, then the one ehp figure. The
+   full panel with names still lives in the detail slot; this is the reminder
+   that survives a station being selected. */
+.wave-over {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-left: 16px;
+  border-left: 1px solid var(--panel-edge);
+  white-space: nowrap;
+}
+.wo-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.wo-lab i { font-style: normal; font-size: 9.5px; letter-spacing: 0; text-transform: none; color: var(--text); }
+.wo-chips { display: flex; align-items: center; gap: 8px; }
+.wo-chip { display: flex; align-items: center; gap: 4px; }
+.wo-chip b { font-size: 11px; font-weight: 500; }
+
+/* The build slot's flyout — everything the icon-only slot stopped printing.
+
+   `:focus-within` as well as `:hover`, which is the whole point: the `title`
+   this replaces never fired on touch and never fired for the keyboard either,
+   so the roster was only learnable with a mouse.
+
+   It opens to the right of the column and it DOES cross the board, which the
+   design's prose says it must not. That sentence cannot be satisfied as
+   written: the gap between the build column and the board is one --dock-gap,
+   14px, and the flyout the same design draws is 236px wide. The mock's own
+   markup puts it at `left: calc(100% + 10px)` and lands it 234px onto the
+   board, so the drawing and the sentence disagree and only the drawing is
+   buildable. Taken as transient and opaque it is fine — it is open only while
+   a slot is hovered or focused, which is a moment spent choosing a station
+   rather than reading the board under it. */
+.fly {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: -4px;
+  z-index: 9;
+  width: 236px;
+  display: none;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 13px 12px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: rgb(6 7 13 / .97);
+  box-shadow: 0 14px 40px rgb(0 0 0 / .65);
+  text-align: left;
+  pointer-events: none;
+}
+.slot:hover .fly,
+.slot:focus-visible .fly,
+.slot:focus-within .fly { display: flex; }
+.fly-head { display: flex; align-items: baseline; gap: 8px; }
+.fly-head b { font-size: 12.5px; }
+.fly-head em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--cash); }
+.fly-blurb { font-size: 10.5px; line-height: 1.45; color: var(--dim); text-wrap: pretty; }
+.fly .mech-words { font-size: 10px; line-height: 1.4; color: var(--dim); }
+
+/* ------------------------------------------------- versus · the era square */
+
+.td-docked .docks .era {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.td-docked .docks .era h6 { margin: 0; }
+.td-docked .docks .era b { font-size: 26px; font-weight: 500; color: var(--bright); }
+.td-docked .docks .era .hint { font-size: 8px; color: var(--dim); }
+.era-buy {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 0;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text);
+}
+.era-buy.poor { color: var(--dim); }
+
+/* --------------------------------------------- versus · the sortie cards */
+
+/* Name and hull, which the card charged for without ever printing. The hull is
+   what the send is judged on — see `renderSortieDeck` for the wave it is quoted
+   against and why that is the receiver's. */
+.sortie .sname {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text);
+}
+.sortie .shull { font-style: normal; font-size: 9px; color: var(--dim); }
+.td-docked .docks .sorties .sortie-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 9px;
+  height: calc(100% - 34px);
+}
+.td-docked .docks .sortie {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  height: auto;
+}
+/* The handle has no panel of its own once docked; it rides in the sortie
+   dock's header row. */
+.td-docked .docks .handle {
+  position: absolute;
+  right: var(--dock-margin);
+  bottom: calc(var(--dock-margin) + 6px);
+  z-index: 2;
+}
+
+/* Versus without the docks — touch, where the four-column layout does not fit
+   and `chromeFor` deliberately does not apply it. The same four sections flow
+   as a wrapped row instead, which is the two-row deck they had before, reached
+   by letting flex do the wrapping rather than by emitting different markup.
+   The compact/touch versus layout is the one part of the design still open. */
+.deck .panel.docks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 16px;
+}
+.deck .panel.docks > section { min-width: 0; }
+
+/* ------------------------------------ versus · the opponent column, docked */
+
+/* The opponent panel and the exchange strip belong to the right column, above
+   the inspector — which is where the design draws them, and the only place
+   they can go once "nothing overlaps the board" is the rule. Undocked (plain
+   Race, touch) the column keeps the board-relative float it has always had;
+   these rules only fire when there is a detail dock to share. */
+/* Undocked — plain Race on a campaign board. The column floats at the board's
+   top-right, which is where it has always been. It is parented to #hud rather
+   than to #game-root now, so the board's own top offset has to be added back;
+   without it the column would ride up into the top bar. */
+#race-col {
+  top: calc(var(--board-y, var(--top-h, 0px)) + 8px);
+  right: 10px;
+  width: var(--race-col-w, 232px);
+}
+.td-docked #race-col {
+  top: var(--board-y);
+  right: var(--dock-margin);
+  left: auto;
+  /* The dock's full width, not the minimap's natural one: this is a column of
+     the layout now, and a panel narrower than the one below it would read as
+     floating over the detail dock rather than as the top of it. */
+  width: var(--dock-detail);
+}
+/* Started below the column, by however tall the column actually is. The
+   exchange panel appears on the first sortie, so this is measured and
+   republished rather than assumed — see the ResizeObserver in raceHud.ts. */
+.td-docked .docks .detail {
+  top: calc(var(--board-y) + var(--race-col-h, 0px));
+}
+
+/* ------------------------------------------------------- the page ground */
+
+/* Outside the letterboxed board the match used to be flat black, and that is
+   the single largest reason it read as emptier than the lobby it comes from —
+   the lobby's ground is a nebula, the match's was nothing.
+
+   Two star layers over the lobby's own gradient. Both are static: motion in
+   the background means "a contact", and that is the one thing this may never
+   say. It is also why this is a background-image rather than elements — a
+   painted gradient costs no node, no frame and nothing to keep in sync.
+
+   The board keeps its own field inside the frame (THEME.fields[…].bg with its
+   own nebulae), so board and page read as two related grounds rather than one
+   flat one. The letterbox is where this shows through, and it should read as
+   space around the sector rather than as a missing background.
+
+   Scoped to .td-ingame so it lands on the game and never on the home screen,
+   the picker or the lobby — the same gate the portrait wall uses. */
+.td-ingame #app {
+  background-color: #0b0c16;
+  background-image:
+    /* Near stars: brighter, sparser. */
+    radial-gradient(1.4px 1.4px at 12% 22%, rgb(233 237 255 / .85), transparent 100%),
+    radial-gradient(1.6px 1.6px at 78% 14%, rgb(233 237 255 / .75), transparent 100%),
+    radial-gradient(1.3px 1.3px at 34% 68%, rgb(214 226 255 / .8), transparent 100%),
+    radial-gradient(1.5px 1.5px at 89% 61%, rgb(233 237 255 / .7), transparent 100%),
+    radial-gradient(1.4px 1.4px at 57% 88%, rgb(220 230 255 / .75), transparent 100%),
+    radial-gradient(1.2px 1.2px at 6% 79%, rgb(233 237 255 / .65), transparent 100%),
+    /* Far stars: dimmer and smaller, on a tighter tile. Depth comes from the
+       two populations differing, not from either one moving — the same
+       argument buildStarfield makes for the board's own sky. */
+    radial-gradient(.9px .9px at 23% 41%, rgb(181 190 224 / .5), transparent 100%),
+    radial-gradient(.8px .8px at 66% 33%, rgb(181 190 224 / .45), transparent 100%),
+    radial-gradient(.9px .9px at 45% 9%, rgb(181 190 224 / .5), transparent 100%),
+    radial-gradient(.8px .8px at 92% 84%, rgb(181 190 224 / .42), transparent 100%),
+    radial-gradient(.9px .9px at 15% 95%, rgb(181 190 224 / .46), transparent 100%),
+    radial-gradient(.8px .8px at 71% 72%, rgb(181 190 224 / .4), transparent 100%),
+    /* The nebula, last so it sits behind the stars. The same circle and the
+       same two stops the lobby paints in raceTheme.ts. */
+    radial-gradient(circle at 50% 46%, rgb(145 132 217 / .14), rgb(6 7 13 / .6) 62%);
+  background-repeat: repeat, repeat, repeat, repeat, repeat, repeat,
+                     repeat, repeat, repeat, repeat, repeat, repeat, no-repeat;
+  background-size:
+    620px 480px, 620px 480px, 620px 480px, 620px 480px, 620px 480px, 620px 480px,
+    310px 250px, 310px 250px, 310px 250px, 310px 250px, 310px 250px, 310px 250px,
+    100% 100%;
 }

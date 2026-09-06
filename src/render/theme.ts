@@ -240,8 +240,6 @@ export interface Theme {
     readonly tower: 'hex' | 'roundRect';
     readonly towerPad: number;
     readonly towerCorner: number;
-    /** Barrel hub radius, as a fraction of the tile. */
-    readonly hubRatio: number;
     readonly towerFillAlpha: number;
     /** Internal bracing lines on the hex station. 0 disables them. */
     readonly towerStrutAlpha: number;
@@ -266,19 +264,17 @@ export interface Theme {
     /**
      * Tier marks baked into the station, as fractions of the tile.
      *
-     * A row of pips low on the hex, one per tier, plus a core that grows and
-     * gains a halo. Both are baked in `BAKE_NEUTRAL` so they take the station's
-     * own tint like everything else — a higher tier must read as a *stronger*
-     * station, never as a different one.
+     * A row of pips low on the hex, one per tier, baked in `BAKE_NEUTRAL` so
+     * they take the station's own tint like everything else — a higher tier must
+     * read as a *stronger* station, never as a different one.
+     *
+     * The pips are now the whole of it. A growing core and its halo used to say
+     * the same thing a second and third time, from the middle of the hex, where
+     * they covered the one part of a mark that identifies the station.
      */
     readonly pipRadius: number;
     readonly pipRowY: number;
     readonly pipSpacing: number;
-    /** Core radius multiplier per tier above the first. */
-    readonly tierHubGrowth: number;
-    /** Halo radius as a multiple of the core, and its alpha per tier above the first. */
-    readonly tierGlowRatio: number;
-    readonly tierGlowAlpha: number;
   };
 
   /** Screen-anchored chrome. Emitted as CSS custom properties at boot. */
@@ -747,7 +743,6 @@ export const DEEP_FIELD: Theme = {
     tower: 'hex',
     towerPad: 3,
     towerCorner: 7,
-    hubRatio: 0.1375,
     towerFillAlpha: 0.2,
     towerStrutAlpha: 0.3,
     strokeWidth: 2.2,
@@ -762,9 +757,6 @@ export const DEEP_FIELD: Theme = {
     pipRadius: 0.045,
     pipRowY: 0.795,
     pipSpacing: 0.15,
-    tierHubGrowth: 0.24,
-    tierGlowRatio: 2.3,
-    tierGlowAlpha: 0.17,
   },
 
   hud: {

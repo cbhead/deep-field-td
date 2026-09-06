@@ -259,6 +259,12 @@ async function main(): Promise<void> {
                     sortieRelay: (ev: SimEvent) => {
                       if (ev.type === 'sortieLaunched') {
                         controller.sendSortie(ev.sortie, ev.lane, ev.kickback);
+                        // The exchange strip's "you" row. Mirrored locally
+                        // rather than waiting for the relay to echo it back:
+                        // nothing on the wire carries our own sends, and a
+                        // record of what you did should not depend on the
+                        // other end being reachable.
+                        raceHud?.sent(ev.sortie, ev.lane);
                       } else if (ev.type === 'sortieLanded') {
                         controller.reportLanded(ev.kickback);
                       }
@@ -267,7 +273,16 @@ async function main(): Promise<void> {
                 : {}),
             }).then(({ world, raceCues, startRaceTone }) => {
               liveWorld = world;
-              raceHud = createRaceHud(mount, opponentName, currentRoom, world.map, raceCues);
+              // `hudRoot` for the opponent column: it spans the whole stage, so
+              // the column can dock beside the board instead of floating on it.
+              raceHud = createRaceHud(
+                mount,
+                opponentName,
+                currentRoom,
+                world.map,
+                raceCues,
+                hudRoot,
+              );
               startRaceTone();
               const bootAt = performance.now();
               sentPins = '';
@@ -500,13 +515,7 @@ async function startGame(
   // The same flag `renderDeck` wraps on, so the height reserved and the rows
   // actually laid out cannot disagree — a deck that wrapped without being paid
   // for would put its second row back over the final approach.
-  const { app, layers } = await createRenderer(
-    mount,
-    boardW,
-    boardH,
-    field,
-    rules.sorties ? 2 : 1,
-  );
+  const { app, layers } = await createRenderer(mount, boardW, boardH, field, rules.sorties);
 
   const textures = createTextures(app.renderer);
   const mapLayer = buildMapLayer(map, textures, field);

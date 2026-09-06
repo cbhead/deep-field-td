@@ -276,8 +276,6 @@ function drawTower(g: Graphics, defId: TowerId, tier: number): void {
   pinToTile(g);
 
   const cx = TILE_PX / 2;
-  const cy = TILE_PX / 2;
-  const hub = TILE_PX * s.hubRatio * (1 + s.tierHubGrowth * (tier - 1));
 
   if (s.tower === 'roundRect') {
     const size = TILE_PX - s.towerPad * 2;
@@ -303,14 +301,10 @@ function drawTower(g: Graphics, defId: TowerId, tier: number): void {
     }
   }
 
-  // Halo under the core, so the core sits on top of its own glow.
-  if (tier > 1 && s.tierGlowAlpha > 0) {
-    g.circle(cx, cy, hub * s.tierGlowRatio).fill({
-      color: BAKE_NEUTRAL,
-      alpha: s.tierGlowAlpha * (tier - 1),
-    });
-  }
-  g.circle(cx, cy, hub).fill(BAKE_NEUTRAL);
+  // No hub. A filled core that grew with tier, over a halo that brightened with
+  // it, was a third encoding of what the collar and the pips already carry — and
+  // it sat exactly where a mark is most legible, so Singularity's spiral and
+  // Overclock's junction were paying for it. Tier reads on the collar.
 
   drawMark(g, defId);
   drawTierPips(g, tier);

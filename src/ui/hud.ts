@@ -23,7 +23,7 @@ import {
   tierCeiling,
   advanceEraCost,
 } from '../sim/build.ts';
-import { planWave, waveCount } from '../sim/wavePlan.ts';
+import { planWave, scaledStats, waveCount } from '../sim/wavePlan.ts';
 import { SORTIES, SORTIE_IDS, type SortieId } from '../content/sorties.ts';
 import { sortieCost, sortieUnlocked } from '../sim/sortie.ts';
 import {
@@ -429,15 +429,26 @@ function renderTop(w: World, speed: number, paused: boolean): string {
       `<button data-act="speed" data-v="${v}" class="${v === speed ? 'on' : ''}">${v}×</button>`,
   ).join('');
 
+  // Versus puts the send control against the ribbon and the wave overview beside
+  // it. Both are moves rather than additions — see `renderWaveOverview` for why
+  // the overview cannot stay in the detail slot, and `renderDeck` for why the
+  // send button no longer has a section of its own to sit in. The era rail left
+  // the row entirely; it is a dock now.
+  const versus = w.rules.sorties;
+
   return (
     // No sigil. Costs lost theirs in the deck, and a currency mark repeated on
     // every price is a character the player has already agreed to.
     `<div class="stat"><label>Cash</label><b>${w.money}</b></div>` +
     `<div class="stat"><label>Lives</label><b class="${crit ? 'crit' : ''}">${w.lives}</b></div>` +
     `<div class="stat"><label>Waves held</label><b>${held}</b></div>` +
-    renderEraRail(w) +
+    (versus ? '' : renderEraRail(w)) +
+    `<div class="ribbon-row">` +
     `<div class="ribbon${crit ? ' crit' : ''}"><span>${label}</span>` +
     `<i style="width:${(clamp01(fill) * 100).toFixed(1)}%"></i></div>` +
+    (versus ? renderTopSend(w) : '') +
+    `</div>` +
+    (versus ? renderWaveOverview(w) : '') +
     `<div class="seg speeds">${speeds}</div>` +
     // aria-label rather than title: the glyph is universal, Esc means nothing
     // on a touch device, and a tooltip that never fires there is dead weight.
@@ -482,7 +493,53 @@ function renderEraRail(w: World): string {
   );
 }
 
+/**
+ * The same ladder as `renderEraRail`, as a square of its own under the build
+ * column.
+ *
+ * It leaves the top bar because the bar is now carrying the wave — the overview
+ * and the send control both moved up there, and something had to give. This is
+ * the right thing to move: era is the only control in that row that was a
+ * *purchase* rather than a readout, and it belongs with the other purchases.
+ *
+ * Under the build column rather than beside it, because what advancing buys is
+ * the greyed-out slots directly above: the rung and the thing it unlocks are
+ * now adjacent, which they never were while the rail sat next to Cash. The
+ * shortfall still prints, for the reason it always did — "not yet, and by this
+ * much" is a plan where a dead button is only a no.
+ */
+function renderEraDock(w: World): string {
+  if (!w.rules.eras) return '';
+  const numeral = ROMAN[w.era] ?? String(w.era);
+  const cost = advanceEraCost(w);
+
+  // At the top of the ladder there is nothing left to buy, and a permanently
+  // disabled button is a worse way to say so than not drawing one.
+  if (cost === null) {
+    return `<section class="era"><h6>Era</h6><b>${numeral}</b><span class="hint">Top rung</span></section>`;
+  }
+
+  const short = cost - w.money;
+  return (
+    `<section class="era"><h6>Era</h6><b>${numeral}</b>` +
+    `<button class="era-buy${short > 0 ? ' poor' : ''}" data-act="era"` +
+    ` aria-label="Advance to era ${ROMAN[w.era + 1] ?? w.era + 1} for ${cost}">▲<span>${cost}</span></button>` +
+    (short > 0 ? `<span class="hint">short ${short}</span>` : '') +
+    `</section>`
+  );
+}
+
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+
+/**
+ * Thousands as `2.0k`, so a long-lived station's damage stays one short token.
+ *
+ * A maxed Lance on a held board runs to five digits, and the inspector prices
+ * its line in words rather than pixels — see the budget `tools/check.ts`
+ * enforces on the head row.
+ */
+const compact = (n: number): string =>
+  n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
 
 function aliveInWave(w: World, wave: number): number {
   let n = 0;
@@ -551,32 +608,38 @@ export function renderDeck(w: World, ui: UiState, inspected: Tower | undefined):
   const detail = `<section class="detail">${renderDetail(w, ui, inspected)}</section>`;
   const send = `<section class="send">${handle}${renderSend(w)}</section>`;
 
-  // ── Versus wraps, because five sections do not fit one row ────────────────
+  // ── Versus docks, because five sections never did fit one row ─────────────
   //
-  // The deck is a fixed composition laid out against 1040px and scaled as a
-  // whole (`fitCanvas`), so horizontal room is a hard budget — the one
-  // tools/check.ts calls "the deck row fits the logical board width". That
-  // check only ever counted the campaign's two flexible items, slots + detail,
-  // and versus adds two more sections it never knew about: the sortie deck
-  // (342px) and a Send button of its own. All five came to ~1515px of 1008,
-  // and flex spent the 500px overrun on whatever could give — the inspector
-  // collapsed to 68px, which is narrower than ONE of its three upgrade
-  // buttons, so a versus player could see their tower but not upgrade it, and
-  // Send was pushed off the panel's right edge entirely.
+  // The two-row wrap this replaces was the previous answer to the same
+  // problem: the deck is a fixed composition laid out against 1040px and
+  // scaled as a whole (`fitCanvas`), so horizontal room is a hard budget, and
+  // versus adds two sections the campaign never had. All five came to ~1515px
+  // of 1008; flex spent the overrun on whatever could give, and the inspector
+  // collapsed to 68px — narrower than ONE of its three upgrade buttons.
   //
-  // Wrapping is the first answer that check names, and it is the right one
-  // here: the alternative — hiding the sortie deck while a tower is inspected
-  // — would take an offensive control away at a moment the player did not
-  // choose, in the one mode where the other side is pressing. Defence on the
-  // top row, offence on the bottom, both always live. `DECK_ROW_PX` reserves
-  // the height.
+  // Wrapping fixed the overflow by spending height, and left the inspector
+  // still the narrowest thing on screen. Docking spends *width the letterbox
+  // was wasting* instead: the board is 1040 of a 1685-wide stage, and the
+  // difference is two columns that were previously black. The detail column
+  // goes from 68px to 468.
+  //
+  // The sections are the same sections — this emits `build`, `detail`,
+  // `sorties` and the era square, and `styles.css` puts them where they go.
+  // The one addition is the era dock, which is a *move* out of the top bar
+  // rather than a new control. The send button does not appear here at all
+  // any more: it rides with the ribbon in `renderTop`, which is why `handle`
+  // is emitted on its own below.
   if (w.rules.sorties) {
     return (
-      `<div class="panel rows">` +
-      `<div class="row">${build}<span class="sep"></span>${detail}</div>` +
-      // renderSortieDeck emits its own trailing separator, so this row reads
-      // sorties | sep | send.
-      `<div class="row">${renderSortieDeck(w, ui)}${send}</div>` +
+      `<div class="panel docks">` +
+      build +
+      detail +
+      renderSortieDeck(w, ui) +
+      renderEraDock(w) +
+      // Docked, the deck never covers the board, so collapsing it buys nothing
+      // — but Tab still collapses it, and a player who pressed Tab needs the
+      // handle to be somewhere. It rides in the sortie dock's header.
+      handle +
       `</div>`
     );
   }
@@ -636,18 +699,26 @@ function renderSortieDeck(w: World, ui: UiState): string {
     // Weight is printed only when it is not 1. A "×1" on four of six cards is
     // noise that makes the two that matter harder to find.
     const weight = def.weight > 1 ? `<i class="w">${def.weight}</i>` : '';
+    // Hull at the *receiver's* wave, on the same standing convention
+    // `sortieCost` documents: both boards run one seeded metronome, so this
+    // world's index stands in for theirs, and the price and the hull are then
+    // quoted against the same wave rather than against two different ones.
+    // This is the number the send is judged on — what their defence has to
+    // chew through — and the card charged for it without ever printing it.
+    const { hp } = scaledStats(def.enemy, w.wave.index, w.rules);
     return (
       `<button class="sortie${poor ? ' poor' : ''}" data-act="sortie" data-id="${id}"` +
       ` aria-label="Send ${ENEMIES[def.enemy].name} down ${w.map.routes[ui.sortieLane]?.id ?? 'lane'} for ${cost}">` +
-      `${contactIcon(def.enemy, 22)}${weight}<b>${cost}</b></button>`
+      `${contactIcon(def.enemy, 22)}${weight}` +
+      `<i class="sname">${ENEMIES[def.enemy].name}</i>` +
+      `<b>${cost}</b><i class="shull">${hp} hull</i></button>`
     );
   }).join('');
 
   return (
     `<section class="sorties"><h6>Send</h6>` +
     `<div class="seg lanes">${lanes}</div>` +
-    `<div class="sortie-row">${cards}</div></section>` +
-    `<span class="sep"></span>`
+    `<div class="sortie-row">${cards}</div></section>`
   );
 }
 
@@ -660,14 +731,20 @@ function renderSortieDeck(w: World, ui: UiState): string {
  * as a number and locked states the wave and nothing else. They can no longer
  * be confused because they no longer look alike.
  *
- * Cost is a corner numeral with no sigil, name is a caps footer, and the glyph
- * carries the mechanic (see `stationShape.ts`) so the roster is learnable at a
- * glance rather than by reading five names.
+ * Cost is a corner numeral with no sigil, and the glyph carries the mechanic
+ * (see `stationShape.ts`) so the roster is learnable at a glance rather than by
+ * reading five names.
  *
- * The blurb stays in `title` and stays figure-free. That is what stops it going
- * stale: `mechanics()` derives the numbers from the def, so a tuned `pierce`
- * updates the panel while prose saying "pierces three" would quietly start
- * lying.
+ * **The slot is the glyph now.** Name, blurb and figures moved out into a
+ * flyout, which is what the build column's 103px can hold — but the width is
+ * the smaller reason. The blurb used to live in `title`, and `title` never
+ * fires on touch, so on the devices where the roster is hardest to learn it was
+ * simply not there. A flyout on hover *and* on focus is the same information on
+ * both, and it can carry the derived figures too, which a tooltip could not.
+ *
+ * Those figures stay derived. `mechanics()` reads them off the def, so a tuned
+ * `pierce` updates the flyout, where prose saying "pierces three" would quietly
+ * start lying.
  */
 export function renderSlots(w: World, ui: UiState): string {
   return TOWER_IDS.map((id) => {
@@ -682,8 +759,8 @@ export function renderSlots(w: World, ui: UiState): string {
     if (!isUnlocked(w, id)) {
       const gate = w.rules.eras ? `Era ${ROMAN[def.era] ?? def.era}` : `Wave ${def.unlockWave + 1}`;
       return (
-        `<div class="slot locked" aria-label="${def.name}, unlocks at ${gate}">` +
-        `${stationIcon(id, 40)}<span class="wave">${gate}</span></div>`
+        `<div class="slot locked" tabindex="0" aria-label="${def.name}, unlocks at ${gate}">` +
+        `${stationIcon(id, 40)}<span class="wave">${gate}</span>${flyout(id, gate)}</div>`
       );
     }
 
@@ -694,14 +771,17 @@ export function renderSlots(w: World, ui: UiState): string {
       .join(' ');
 
     return (
-      `<button class="${cls}" data-act="arm" data-id="${id}" title="${def.blurb}">` +
+      `<button class="${cls}" data-act="arm" data-id="${id}">` +
       `<kbd>${def.hotkey}</kbd>` +
       `<span class="corner">${def.cost}</span>` +
       stationIcon(id, 40) +
       // Naming the gap turns "no" into "not yet, and by this much" — which is
-      // the difference between a dead control and a plan.
+      // the difference between a dead control and a plan. It stays on the slot
+      // rather than moving into the flyout: it is the one fact that changes
+      // while you are looking at the column deciding what to afford.
       (poor ? `<span class="short">short ${short}</span>` : '') +
-      `<span class="name">${def.name}</span></button>`
+      flyout(id) +
+      `</button>`
     );
   }).join('');
 }
@@ -776,6 +856,32 @@ function mechanics(d: TowerStats): { glyph: string; words: string }[] {
     out.push({ glyph: `${seconds.toFixed(1)}s`, words: `over ${seconds.toFixed(1)} seconds` });
   }
   return out;
+}
+
+/**
+ * The name, blurb and figures a build slot no longer has room to print.
+ *
+ * This is the payload that used to be a `title` attribute plus a caps footer.
+ * As markup it can carry `axisChips` and `mechanicWords` — the same derived
+ * figures the armed panel shows — where a tooltip could only hold one string,
+ * and it opens on `:focus-within` as well as `:hover`, so keyboard and touch
+ * reach it. `styles.css` opens it to the right of the column and never over the
+ * board.
+ *
+ * Locked slots get one too, naming the gate. A player deciding whether to save
+ * for era III should be able to read what era III actually buys.
+ */
+function flyout(id: TowerId, gate?: string): string {
+  const def = TOWERS[id];
+  const price = gate ?? String(def.cost);
+  return (
+    `<span class="fly" role="tooltip">` +
+    `<span class="fly-head"><b>${def.name}</b><em>${price}</em></span>` +
+    `<span class="fly-blurb">${def.blurb}</span>` +
+    axisChips(def) +
+    mechanicWords(def) +
+    `</span>`
+  );
 }
 
 function mechanicChips(d: TowerStats): string {
@@ -917,11 +1023,22 @@ export function renderInspector(w: World, t: Tower): string {
     `<div class="body">` +
     `<div class="head t-${t.defId}"><b>${d.name}</b>` +
     // Tile coordinates dropped — the one fact here nobody has ever needed.
-    // Damage dealt stays in the `title` rather than becoming text: this is the
-    // inspector, read mid-wave, and it is held to a hard ten-word budget that
-    // tools/check.ts enforces. The words go to the armed panel instead.
-    `<span class="blurb" title="${Math.round(t.damageDealt)} damage dealt">` +
-    `${t.kills} ${t.kills === 1 ? 'kill' : 'kills'}</span></div>` +
+    //
+    // Damage dealt used to be a `title` on this line, which meant it did not
+    // exist on touch and was a hover away everywhere else. It is the figure
+    // that answers "is this emplacement earning its tile" — the question the
+    // Sell button below poses — so where there is room it is text.
+    //
+    // Where there is room is versus, and only versus. The docked detail column
+    // is 468px and runs the full height of the stage; the campaign's inspector
+    // is still a section of a 150px deck, and the ten-word budget
+    // tools/check.ts enforces on this row is calibrated for that. Spending two
+    // of those ten words here would be spending the campaign's budget to buy
+    // versus a line it has the room for and the campaign does not.
+    `<span class="blurb"${w.rules.sorties ? '' : ` title="${Math.round(t.damageDealt)} damage dealt"`}>` +
+    `${t.kills} ${t.kills === 1 ? 'kill' : 'kills'}` +
+    (w.rules.sorties ? ` · ${compact(t.damageDealt)} damage dealt` : '') +
+    `</span></div>` +
     // Live stats, not the def: this is where an effect purchase becomes visible
     // in numbers, including the secondary dial the upgrade card omits. One row
     // for both chip groups — the inspector's height budget has no room for two.
@@ -1076,6 +1193,81 @@ function renderArmourLine(w: World, t: Tower, next: number | null): string {
 
 
 
+interface WaveGroup {
+  readonly enemy: EnemyId;
+  n: number;
+  readonly hp: number;
+  readonly shield: number;
+}
+
+/**
+ * The coming wave, grouped by type in order of first arrival.
+ *
+ * This used to read `plan[0]`'s name and hp and apply them to `plan.length`,
+ * which was true only while there was one contact type. With six it announced
+ * wave 10 as "40 × Drifter" when barely a quarter of it was Drifters — a
+ * confident lie, in the one panel whose entire job is telling the player what to
+ * prepare for.
+ *
+ * Shared now, because versus draws this twice: the detail slot still shows it
+ * when nothing is selected, and the top bar shows it *always*. Two copies of the
+ * grouping would be two chances to disagree about what is inbound.
+ */
+function waveGroups(w: World): WaveGroup[] {
+  const plan = planWave(w.seed, w.wave.index, w.rules, w.map.routes);
+  const groups: WaveGroup[] = [];
+  for (const p of plan) {
+    const hit = groups.find((g) => g.enemy === p.enemy);
+    if (hit === undefined) groups.push({ enemy: p.enemy, n: 1, hp: p.hp, shield: p.shield });
+    else hit.n++;
+  }
+  return groups;
+}
+
+/**
+ * Effective health, so a Warden's overshield counts toward "toughest" — it is
+ * health the player has to chew through whichever pool it sits in.
+ */
+function toughestOf(groups: readonly WaveGroup[]): WaveGroup {
+  return groups.reduce((a, b) => (b.hp + b.shield > a.hp + a.shield ? b : a));
+}
+
+/**
+ * The wave overview, in the top bar, in versus only.
+ *
+ * **It is here because the detail slot cannot hold it.** `renderDetail` shows
+ * the wave preview only when nothing is selected — and in versus that slot is
+ * never empty for long, because clicking a station to upgrade it replaces the
+ * preview with the inspector. So the one readout telling you what is walking at
+ * you disappeared at exactly the moment you were spending money to stop it.
+ *
+ * Compressed rather than reproduced: glyph and count per type, then one
+ * effective-health figure. The full panel with names still lives in the detail
+ * slot, so this is a reminder of something already taught rather than the only
+ * place it is said.
+ */
+function renderWaveOverview(w: World): string {
+  const s = w.wave;
+  if (s.phase === 'done' && w.creeps.length === 0) return '';
+
+  const groups = waveGroups(w);
+  if (groups.length === 0) return '';
+
+  const chips = groups
+    .map((g) => `<span class="wo-chip">${contactIcon(g.enemy, 17)}<b>${g.n}</b></span>`)
+    .join('');
+  const toughest = toughestOf(groups);
+  const inbound = groups.reduce((n, g) => n + g.n, 0);
+
+  return (
+    `<div class="wave-over">` +
+    `<span class="wo-lab">Inbound<i>${inbound} contacts</i></span>` +
+    `<span class="wo-chips">${chips}</span>` +
+    `<span class="wo-lab">Toughest<i>${toughest.hp + toughest.shield} ehp</i></span>` +
+    `</div>`
+  );
+}
+
 /**
  * What is coming, drawn from `planWave` — the same pure function the spawner
  * uses, so the preview cannot promise a wave the sim won't deliver.
@@ -1086,28 +1278,13 @@ export function renderNextContact(w: World): string {
     return `<div class="head"><b>Route clear</b></div><div class="hint">Nothing else is coming.</div>`;
   }
 
-  const plan = planWave(w.seed, s.index, w.rules, w.map.routes);
-  if (plan.length === 0) {
+  const groups = waveGroups(w);
+  if (groups.length === 0) {
     return `<div class="head"><b>Wave ${s.index + 1}</b></div>`;
   }
 
-  // Grouped by type, in order of first arrival.
-  //
-  // This used to read `plan[0]`'s name and hp and apply them to `plan.length`,
-  // which was true only while there was one contact type. With six it announced
-  // wave 10 as "40 × Drifter" when barely a quarter of it was Drifters — a
-  // confident lie, in the one panel whose entire job is telling the player what
-  // to prepare for.
-  const groups: { enemy: EnemyId; n: number; hp: number; shield: number }[] = [];
-  for (const p of plan) {
-    const hit = groups.find((g) => g.enemy === p.enemy);
-    if (hit === undefined) groups.push({ enemy: p.enemy, n: 1, hp: p.hp, shield: p.shield });
-    else hit.n++;
-  }
-
-  // Effective health, so a Warden's overshield counts toward "toughest" — it is
-  // health the player has to chew through whatever pool it sits in.
-  const toughest = groups.reduce((a, b) => (b.hp + b.shield > a.hp + a.shield ? b : a));
+  const inbound = groups.reduce((n, g) => n + g.n, 0);
+  const toughest = toughestOf(groups);
 
   // The real glyph at the real tint, not the name. The panel's whole job is
   // "prepare for this", and it was describing the wave in a language the board
@@ -1129,7 +1306,7 @@ export function renderNextContact(w: World): string {
 
   return (
     `<div class="head"><i class="dot contact"></i><b>Wave ${s.index + 1}</b>` +
-    `<span class="blurb">${plan.length} inbound</span></div>` +
+    `<span class="blurb">${inbound} inbound</span></div>` +
     `<div class="chips">${chips}</div>` +
     // One effective-health figure, because the biggest glyph above already
     // named which contact it belongs to. Shield counts: it is health the player
@@ -1139,6 +1316,30 @@ export function renderNextContact(w: World): string {
 }
 
 // ----------------------------------------------------------------- send
+
+/**
+ * The send control, beside the ribbon it is about.
+ *
+ * The same decision `renderSend` poses, in a fifth of the width, because in
+ * versus it is riding in the top bar rather than owning a deck section. The
+ * hint goes: "sending early pays the remaining timer as cash" is a rule you
+ * learn once, and the `+13` on the button is that rule every time after.
+ *
+ * Spawning and done stay flat readouts. There is nothing to press, and a
+ * disabled button says that worse than a sentence does.
+ */
+function renderTopSend(w: World): string {
+  const s = w.wave;
+  if (s.phase === 'spawning') return `<span class="top-send flat">Wave ${s.index + 1} running</span>`;
+  if (s.phase === 'done') return `<span class="top-send flat">No waves left</span>`;
+
+  const bonus = Math.round(Math.max(0, s.timer) * BALANCE.rushBonusPerSecond);
+  return (
+    `<button class="top-send" data-act="send"` +
+    ` aria-label="Send wave ${s.index + 1} now${bonus > 0 ? `, paying ${bonus}` : ''}">` +
+    `Send wave ${s.index + 1}${bonus > 0 ? `<em>+${bonus}</em>` : ''}</button>`
+  );
+}
 
 function renderSend(w: World): string {
   const s = w.wave;

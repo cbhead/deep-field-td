@@ -11,7 +11,15 @@
  */
 import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { VERSUS } from '../src/content/maps/versus.ts';
-import { GRID_MASK_FLOOR, TILE_PX, gridMaskAt } from '../src/render/constants.ts';
+import {
+  DOCK_BUILD_PX,
+  DOCK_DETAIL_PX,
+  DOCK_GAP,
+  DOCK_MARGIN,
+  GRID_MASK_FLOOR,
+  TILE_PX,
+  gridMaskAt,
+} from '../src/render/constants.ts';
 import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render/route.ts';
 import { SECTOR_FIELDS, THEME, step } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
@@ -3679,16 +3687,41 @@ section('hud · build slot states');
     `${oneRow}px vs ${LOGICAL_W}px — the wrap is required, not decorative`,
   );
 
-  // And that the markup actually wraps where the arithmetic says it must.
+  // And that the markup answers the overrun somehow. It used to wrap into two
+  // rows; it now docks into four panels around the board, which answers the
+  // same arithmetic by spending width the letterbox was wasting rather than
+  // height. The row budgets above are kept because they are the *reason* — they
+  // state what a single row costs, and that is still what rules a single row
+  // out. What is asserted here is the current answer, not the old one.
   const deckUi = { ...ui, sortieLane: 0 } as unknown as Parameters<typeof renderDeck>[1];
   const fight = versusWorld();
   fight.money = 100_000;
   const versusDeck = renderDeck(fight, deckUi, undefined);
   const campaignDeck = renderDeck(rich, deckUi, undefined);
+  const docks = ['build', 'detail', 'sorties', 'era'];
   check(
-    versusDeck.includes('class="panel rows"') &&
-      (versusDeck.match(/<div class="row">/g) ?? []).length === 2,
-    'versus deck: renders two rows',
+    versusDeck.includes('class="panel docks"') &&
+      docks.every((d) => versusDeck.includes(`class="${d}"`)),
+    'versus deck: renders four docks',
+    docks.filter((d) => versusDeck.includes(`class="${d}"`)).join(' · '),
+  );
+  // The whole point of docking, in one number: the column that held the
+  // inspector was 68px when the row over-subscribed and 430 at its cap. It is
+  // now wider than the cap, in its own reserved space, and cannot be squeezed
+  // by a sibling — because it no longer has any.
+  check(
+    DOCK_DETAIL_PX > DETAIL_CAP,
+    'versus deck: the detail column beats the flex cap it replaces',
+    `${DOCK_DETAIL_PX}px docked vs ${DETAIL_CAP}px capped`,
+  );
+  // The docked stage has to actually contain its docks, or the columns render
+  // off the letterbox edge at every scale.
+  const stageW =
+    DOCK_MARGIN + DOCK_BUILD_PX + DOCK_GAP + LOGICAL_W + DOCK_GAP + DOCK_DETAIL_PX + DOCK_MARGIN;
+  check(
+    stageW === 1685,
+    'versus deck: the docked stage closes on its own arithmetic',
+    `${DOCK_BUILD_PX} + ${LOGICAL_W} + ${DOCK_DETAIL_PX} + gaps = ${stageW}px`,
   );
   check(
     campaignDeck.includes('class="panel"') && !campaignDeck.includes('class="row"'),

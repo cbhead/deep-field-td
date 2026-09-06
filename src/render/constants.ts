@@ -84,6 +84,46 @@ export const STRIP_PX_TOUCH = 48;
 export const DECK_ROW_PX = 124;
 
 /**
+ * Versus lays out in four docks around the board rather than one panel under it.
+ *
+ * **The board stops being the whole stage.** Every other mode's stage is the
+ * board's width, with reserved strips above and below; here there are columns
+ * either side as well, so `fitCanvas` scales a box wider than the board and
+ * `--board-x` says where inside it the canvas actually sits. Nothing overlaps
+ * the board at any size, which is the reason this beats floating the HUD over
+ * it — the alternative the two-row deck was already straining against.
+ *
+ * **These are the mock's numbers, converted rather than copied.** The design
+ * draws a 1440x810 canvas whose board is 888x512; ours is 1040x600, so every
+ * figure here is the drawn one times 1040/888. That is also how the one figure
+ * the spec states in prose — "detail column 488px right" — is known to be
+ * wrong: at 488 the right column starts at x=932 and the board runs to 1008, so
+ * the two would overlap by 76px. The drawn 400 scales to 468 and closes the
+ * canvas exactly, and the drawing is what the rest of the layout agrees with.
+ *
+ * Gaps come in two sizes for the same reason the mock has two: the outer margin
+ * holds the docks off the letterbox edge, the inner one only has to separate two
+ * panels that are already bounded.
+ */
+export const DOCK_GAP = 14;
+export const DOCK_MARGIN = 23;
+/** Build column, and the era square beneath it. */
+export const DOCK_BUILD_PX = 103;
+/** Detail column, full height at the right. */
+export const DOCK_DETAIL_PX = 468;
+/** Sortie deck, directly beneath the board and the same width as it. */
+export const DOCK_SORTIE_PX = 225;
+/** Era square, bottom-left, under the build column. */
+export const DOCK_ERA_PX = 108;
+/**
+ * A taller top bar than any other mode's, because it carries more.
+ *
+ * The wave overview and the send control both move up here, so 46px stops being
+ * enough — the mock draws 58 against its 888 board, which is this against ours.
+ */
+export const TOP_PX_VERSUS = 68;
+
+/**
  * Below this on either axis, a touch device is a phone rather than a tablet.
  *
  * The width bound is an iPad mini in portrait (744) staying on the roomy side;
