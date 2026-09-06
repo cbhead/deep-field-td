@@ -424,7 +424,7 @@ async function startSinglePlayer(
   // is always populated by the time it is used.
   let finalMoney = 0;
 
-  await startGame(mount, hudRoot, resolveSeed(), {
+  const { world: soloWorld } = await startGame(mount, hudRoot, resolveSeed(), {
     level,
     rules: isVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty, bank),
     campaign: {
@@ -460,6 +460,25 @@ async function startSinglePlayer(
       );
     },
   });
+
+  // `?peer=demo` on a solo versus board, in a dev server only.
+  //
+  // The opponent panel and the exchange strip are the two parts of the versus
+  // HUD that render from a peer's status blob rather than from the local
+  // world, so solo versus shows an empty column and they cannot be reviewed
+  // without running the relay and driving two browsers. This mounts them with
+  // invented data instead.
+  //
+  // Both halves of the guard matter. `import.meta.env.DEV` is a literal Vite
+  // replaces at build time, so in a production build this collapses to `false`
+  // and the dynamic import below is never reachable — `demoPeer.ts` is not in
+  // the bundle at all, which is the only acceptable place for a module that
+  // fabricates opponent state. The query flag is then just a convenience on
+  // top of that, not the thing keeping it out of a real match.
+  if (import.meta.env.DEV && isVersus && params.get('peer') === 'demo') {
+    const { startDemoPeer } = await import('./ui/demoPeer.ts');
+    startDemoPeer(mount, hudRoot, soloWorld);
+  }
 }
 
 function runQuery(

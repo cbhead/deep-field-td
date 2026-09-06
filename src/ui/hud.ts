@@ -25,7 +25,7 @@ import {
 } from '../sim/build.ts';
 import { planWave, scaledStats, waveCount } from '../sim/wavePlan.ts';
 import { SORTIES, SORTIE_IDS, type SortieId } from '../content/sorties.ts';
-import { sortieCost, sortieUnlocked } from '../sim/sortie.ts';
+import { sortieCost, sortieKickback, sortieUnlocked } from '../sim/sortie.ts';
 import {
   TARGET_MODES,
   UPGRADE_PATHS,
@@ -690,8 +690,12 @@ function renderSortieDeck(w: World, ui: UiState): string {
     if (!sortieUnlocked(w, id)) {
       const gate = `Era ${ROMAN[def.era] ?? def.era}`;
       return (
-        `<div class="sortie locked" aria-label="${ENEMIES[def.enemy].name}, opens at ${gate}">` +
-        `${contactIcon(def.enemy, 22)}<span class="wave">${gate}</span></div>`
+        `<div class="sortie locked" tabindex="0" aria-label="${ENEMIES[def.enemy].name}, opens at ${gate}">` +
+        `${contactIcon(def.enemy, 22)}<span class="wave">${gate}</span>` +
+        // A locked rung gets its flyout too. What era III buys is exactly the
+        // thing a player weighs while deciding whether to save for it.
+        sortieFlyout(id, w, sortieCost(id, w.wave.index, w)) +
+        `</div>`
       );
     }
     const cost = sortieCost(id, w.wave.index, w);
@@ -711,14 +715,62 @@ function renderSortieDeck(w: World, ui: UiState): string {
       ` aria-label="Send ${ENEMIES[def.enemy].name} down ${w.map.routes[ui.sortieLane]?.id ?? 'lane'} for ${cost}">` +
       `${contactIcon(def.enemy, 22)}${weight}` +
       `<i class="sname">${ENEMIES[def.enemy].name}</i>` +
-      `<b>${cost}</b><i class="shull">${hp} hull</i></button>`
+      `<b>${cost}</b><i class="shull">${hp} hull</i>` +
+      sortieFlyout(id, w, cost) +
+      `</button>`
     );
   }).join('');
 
+  // One header row, not a stack. The label, the lane and the two standing rules
+  // are all about the same question — what goes down which lane and what it
+  // costs — and stacking them let the lane toggle stretch to the full width of
+  // the dock, which made a two-way choice look like a progress bar.
   return (
-    `<section class="sorties"><h6>Send</h6>` +
+    `<section class="sorties">` +
+    `<div class="sortie-head"><h6>Send</h6>` +
     `<div class="seg lanes">${lanes}</div>` +
+    `<span class="hint">lane persists between sends · arrives at their midfield</span>` +
+    `<span class="hint far">priced off their wave · ` +
+    `${Math.round(BALANCE.sortie.kickback * 100)}% back if it reaches their core</span>` +
+    `</div>` +
     `<div class="sortie-row">${cards}</div></section>`
+  );
+}
+
+/**
+ * What a sortie is, for the card that only had room for a price.
+ *
+ * The build column got a flyout because `title` never fires on touch; the
+ * sortie roster has exactly the same problem and is the half of the deck a
+ * player understands least, because these six only ever arrive on someone
+ * else's board. The mock wires hover handlers onto these cards and then never
+ * reads the state — `t0`–`t5` are computed and unused — so this is the
+ * unfinished half of a decision it had already taken for the build slots.
+ *
+ * Figures are the receiver's, on the same convention as the price beside them.
+ */
+function sortieFlyout(id: SortieId, w: World, cost: number): string {
+  const def = SORTIES[id];
+  const e = ENEMIES[def.enemy];
+  const { hp, shield } = scaledStats(def.enemy, w.wave.index, w.rules);
+
+  const chip = (k: string, v: string): string =>
+    `<span class="fc"><i>${k}</i><b>${v}</b></span>`;
+
+  return (
+    `<span class="fly" role="tooltip">` +
+    `<span class="fly-head"><b>${e.name}</b><em>${cost}</em></span>` +
+    `<span class="fly-chips">` +
+    chip('hull', String(hp)) +
+    (shield > 0 ? chip('shield', String(shield)) : '') +
+    (e.armor > 0 ? chip('armour', String(e.armor)) : '') +
+    chip('speed', `${e.speed.toFixed(1)}tl/s`) +
+    (def.weight > 1 ? chip('sends', `${def.weight}×`) : '') +
+    `</span>` +
+    `<span class="fly-blurb">Costs them ${e.leakDamage} ` +
+    `${e.leakDamage === 1 ? 'life' : 'lives'} if it reaches their core, and pays you ` +
+    `${sortieKickback(cost)} back.</span>` +
+    `</span>`
   );
 }
 

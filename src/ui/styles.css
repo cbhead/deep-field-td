@@ -1424,3 +1424,88 @@ button.path:hover { border-color: var(--accent); }
     310px 250px, 310px 250px, 310px 250px, 310px 250px, 310px 250px, 310px 250px,
     100% 100%;
 }
+
+/* ------------------------------------------- versus · the sortie dock head */
+
+/* A row, so the lane toggle stays the size of a two-way choice. Stacked, the
+   `.seg` filled the dock's full 1010px and read as a progress bar rather than
+   as a pair of buttons. */
+.sortie-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+.sortie-head h6 { margin: 0; flex: none; }
+.sortie-head .lanes { flex: none; }
+.sortie-head .hint { font-size: 9.5px; color: var(--dim); white-space: nowrap; }
+.sortie-head .hint.far { margin-left: auto; }
+
+/* The sortie flyout opens UPWARD: these cards sit on the bottom edge of the
+   stage, so the build column's downward-right placement would open off it. */
+.sortie { position: relative; }
+.sortie .fly {
+  left: 0;
+  top: auto;
+  bottom: calc(100% + 10px);
+}
+.sortie:hover .fly,
+.sortie:focus-visible .fly,
+.sortie:focus-within .fly { display: flex; }
+.fly-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.fly-chips .fc {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.fly-chips .fc i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.fly-chips .fc b { font-size: 10px; font-weight: 500; color: var(--muted); }
+
+/* ------------------------------------------------ the sky, actually visible */
+
+/* The ground was painting and could not be seen. Two reasons, both real:
+   the docked stage is 1685x944, so at an ordinary window there is almost no
+   letterbox left to show it in (15x56px at 1700x1000), and the top bar — the
+   one large surface the design draws as translucent — was opaque.
+
+   So the sky moves to where the mock actually puts it. In the design the star
+   field is a full-canvas layer BEHIND the panels, not a margin around them:
+   the docks sit on it at .93, and the top bar sits on it at .6. That is why
+   the design bothers to specify those two numbers. #stage is transparent, so
+   painting #app is enough to reach the gaps between docks — what was missing
+   was anywhere wide enough to notice and a top bar that let it through. */
+.td-docked .top {
+  background: rgb(6 7 13 / .62);
+  backdrop-filter: blur(2px);
+}
+
+/* Denser and brighter than the first pass, which was calibrated for a large
+   letterbox that the docked layout does not leave. These have to read in a
+   14px gap and behind a translucent bar. */
+.td-ingame #app {
+  background-size:
+    380px 300px, 380px 300px, 380px 300px, 380px 300px, 380px 300px, 380px 300px,
+    190px 160px, 190px 160px, 190px 160px, 190px 160px, 190px 160px, 190px 160px,
+    100% 100%;
+}
+
+/* The race strip, retired where the docks say it twice.
+
+   It floats over the top of the board reading "you · wave · lives | THEM ·
+   wave · lives · era — behind". Docked, every one of those figures is already
+   on screen in a panel that is not sitting on the play area: ours in the top
+   bar, theirs in the opponent panel's stats grid, and the standing in the pill
+   directly under it. Keeping it would be the third copy of the comparison and
+   the only one covering tiles. Undocked it is still the only place any of this
+   is said, so it stays. */
+.td-docked #race-hud { display: none; }
