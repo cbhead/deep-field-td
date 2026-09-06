@@ -10,6 +10,7 @@ import {
   DOCK_MARGIN,
   DOCK_SORTIE_PX,
   isCompactViewport,
+  STRIP_PX,
   STRIP_PX_TOUCH,
   TOP_PX,
   TOP_PX_TOUCH,
@@ -78,9 +79,10 @@ export async function createRenderer(
   // v8: `app.canvas`, not `app.view`.
   mount.appendChild(app.canvas);
 
-  fitCanvas(app, versus);
+  fitting = { app, versus, collapsed: false };
+  fitCanvas(app, versus, false);
   watchViewport(() => {
-    fitCanvas(app, versus);
+    fitCanvas(app, versus, fitting?.collapsed ?? false);
   });
 
   const layers: Layers = {
@@ -157,9 +159,17 @@ interface Chrome {
  *
  * Not from `--board-scale`: the chrome height feeds the scale, so reading the
  * scale back here is the same feedback loop `fitCanvas` documents below, one
- * level up. And not from `ui.deckOpen` either — that would be loop-free, but it
- * would rescale the whole board every time the player pressed Tab, moving every
- * tile out from under a placement gesture already in flight.
+ * level up.
+ *
+ * **`collapsed` is passed in, and this used to refuse it.** The old note here
+ * said reading `ui.deckOpen` would rescale the board every time Tab was
+ * pressed, moving every tile out from under a placement gesture in flight. The
+ * hazard is real; the conclusion was too strong. Rescaling on Tab is now the
+ * *point* — a collapsed deck reserves no docks, and the board takes the room —
+ * and the hazard is handled by direction rather than by refusal: this function
+ * still reads no UI state, the deck pushes the change through
+ * `setDeckCollapsed`, and Tab comes from the same hand that would be dragging,
+ * so it cannot land mid-gesture the way a window resize can.
  *
  * **Versus on a pointer device docks; everywhere else strips.** The four-dock
  * layout spends 973px of width it does not have on a phone — the detail column
@@ -169,10 +179,35 @@ interface Chrome {
  * Until that is decided, a touch versus board keeps the two-row deck it already
  * had, which fits and works.
  */
-function chromeFor(touch: boolean, vw: number, vh: number, versus: boolean): Chrome {
+function chromeFor(
+  touch: boolean,
+  vw: number,
+  vh: number,
+  versus: boolean,
+  collapsed: boolean,
+): Chrome {
   const strip = { left: 0, right: 0, docked: false };
   // Versus's second row, added to whichever tier's height would otherwise apply.
   const extra = versus ? DECK_ROW_PX : 0;
+
+  // Collapsed, the deck is one handle and the docks are not drawn — so none of
+  // the room they need should still be reserved. The stage drops from 1685x944
+  // to 1040x702 and everything the chrome gives up goes to the board.
+  //
+  // What that is worth depends entirely on the window, which is worth stating
+  // because it is not obvious: the docked stage is 1685 wide, so on anything
+  // wider than that the board is already at 1:1 and collapsing buys *nothing*.
+  // It pays on laptops, where the fit is width-bound — 0.76 to 1.0 at 1280x800,
+  // 0.86 to 1.0 at 1440x900, 0.90 to 1.0 on a 1512-wide MacBook. Measure before
+  // changing any of these numbers; the first version of this comment claimed a
+  // gain at 1700x1000, where there is none.
+  //
+  // Only the top bar survives. It is the only place cash, lives and the send
+  // control exist now that the era rail and the deck have moved off it, and a
+  // full-screen board you cannot spend money from is a screenshot, not a mode.
+  if (collapsed) {
+    return { ...strip, top: versus ? TOP_PX_VERSUS : TOP_PX, deck: STRIP_PX, tier: 'desktop' };
+  }
 
   if (!touch) {
     if (!versus) return { ...strip, top: TOP_PX, deck: DECK_PX, tier: 'desktop' };
@@ -237,22 +272,45 @@ function watchViewport(refit: () => void): void {
   });
 }
 
-/** Last (viewport, tier) actually fitted, so repeat triggers cost nothing. */
+/** Last (viewport, tier, collapsed) fitted, so repeat triggers cost nothing. */
 let lastFit = '';
 
-function fitCanvas(app: Application, versus: boolean): void {
+/**
+ * The live fit, so the deck can ask for a new one when it opens or closes.
+ *
+ * `chromeFor` still refuses to read `ui.deckOpen` itself — see its own note on
+ * why reading UI state inside a measurement is the wrong direction. This is the
+ * other direction: the deck *tells* the renderer, once, on the frame the state
+ * changed, and nothing in the measurement path learns what a deck is.
+ *
+ * The hazard the original comment named is real and is why this is a push
+ * rather than a poll: refitting rescales the board, which moves every tile
+ * under a placement gesture already in flight. Tab is a deliberate act by the
+ * same hand that would be dragging, so it cannot arrive mid-drag the way a
+ * window resize can — and `setDeckCollapsed` is a no-op unless the value
+ * actually changed, so an unchanged frame never refits.
+ */
+let fitting: { app: Application; versus: boolean; collapsed: boolean } | null = null;
+
+export function setDeckCollapsed(collapsed: boolean): void {
+  if (fitting === null || fitting.collapsed === collapsed) return;
+  fitting.collapsed = collapsed;
+  fitCanvas(fitting.app, fitting.versus, collapsed);
+}
+
+function fitCanvas(app: Application, versus: boolean, collapsed = false): void {
   const viewport = document.documentElement;
   const vw = viewport.clientWidth;
   const vh = viewport.clientHeight;
 
   const touch = matchMedia('(pointer: coarse)').matches;
-  const chrome = chromeFor(touch, vw, vh, versus);
+  const chrome = chromeFor(touch, vw, vh, versus, collapsed);
 
   // ResizeObserver fires on every pixel of Safari's toolbar sliding away, so
   // this has to be cheap when nothing meaningful changed. It is also the
   // backstop that turns any accidental write-measure loop into a no-op rather
   // than a spin.
-  const sig = `${vw}x${vh}|${chrome.tier}`;
+  const sig = `${vw}x${vh}|${chrome.tier}|${collapsed}`;
   if (sig === lastFit) return;
   lastFit = sig;
 
@@ -283,6 +341,7 @@ function fitCanvas(app: Application, versus: boolean): void {
   viewport.classList.toggle('td-touch', touch);
   viewport.classList.toggle('td-compact', chrome.tier === 'compact');
   viewport.classList.toggle('td-docked', chrome.docked);
+  viewport.classList.toggle('td-collapsed', collapsed);
   // Set once a board exists, so the portrait wall in styles.css lands on the
   // game and never on the home screen, picker or lobby.
   viewport.classList.add('td-ingame');

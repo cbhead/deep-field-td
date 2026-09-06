@@ -74,6 +74,22 @@ export interface HudPorts {
   restart(): void;
 
   /**
+   * The deck opened or closed.
+   *
+   * A port rather than a direct call into the renderer, because collapsing the
+   * deck changes how much chrome is reserved and therefore the board's scale —
+   * and the HUD has no business importing the thing that owns that. `main.ts`
+   * wires it to `setDeckCollapsed`.
+   *
+   * It is an event and not a per-frame read on purpose. The frame loop is
+   * `requestAnimationFrame`, so polling `deckOpen` there means the layout stops
+   * responding whenever rAF does — in a background tab, and in any headless
+   * harness driving the page. Toggling is rare and already an event; this
+   * makes the refit follow it.
+   */
+  deckToggled?: () => void;
+
+  /**
    * Campaign navigation, absent in Race mode.
    *
    * Optional because the end-of-run cards are shared: Race reaches the same
@@ -192,6 +208,7 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
         break;
       case 'deck':
         ui.deckOpen = !ui.deckOpen;
+        ports.deckToggled?.();
         break;
       case 'speed':
         ports.speed.set(Number(data['v']));
@@ -290,6 +307,7 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
         document.documentElement.classList.contains('td-compact')
       ) {
         ui.deckOpen = false;
+        ports.deckToggled?.();
       }
       if (ev.type === 'waveCleared') {
         clearToast = ev;
@@ -691,7 +709,7 @@ function renderSortieDeck(w: World, ui: UiState): string {
       const gate = `Era ${ROMAN[def.era] ?? def.era}`;
       return (
         `<div class="sortie locked" tabindex="0" aria-label="${ENEMIES[def.enemy].name}, opens at ${gate}">` +
-        `${contactIcon(def.enemy, 22)}<span class="wave">${gate}</span>` +
+        `${contactIcon(def.enemy, 40)}<span class="wave">${gate}</span>` +
         // A locked rung gets its flyout too. What era III buys is exactly the
         // thing a player weighs while deciding whether to save for it.
         sortieFlyout(id, w, sortieCost(id, w.wave.index, w)) +
@@ -714,7 +732,7 @@ function renderSortieDeck(w: World, ui: UiState): string {
       `<button class="sortie${poor ? ' poor' : ''}" data-act="sortie" data-id="${id}"` +
       ` aria-label="Send ${ENEMIES[def.enemy].name} down ${w.map.routes[ui.sortieLane]?.id ?? 'lane'} for ${cost}">` +
       `<kbd>${def.hotkey.toUpperCase()}</kbd>` +
-      `${contactIcon(def.enemy, 22)}${weight}` +
+      `${contactIcon(def.enemy, 40)}${weight}` +
       `<i class="sname">${ENEMIES[def.enemy].name}</i>` +
       `<b>${cost}</b><i class="shull">${hp} hull</i>` +
       sortieFlyout(id, w, cost) +
@@ -1307,7 +1325,7 @@ function renderWaveOverview(w: World): string {
   if (groups.length === 0) return '';
 
   const chips = groups
-    .map((g) => `<span class="wo-chip">${contactIcon(g.enemy, 17)}<b>${g.n}</b></span>`)
+    .map((g) => `<span class="wo-chip">${contactIcon(g.enemy, 20)}<b>${g.n}</b></span>`)
     .join('');
   const toughest = toughestOf(groups);
   const inbound = groups.reduce((n, g) => n + g.n, 0);

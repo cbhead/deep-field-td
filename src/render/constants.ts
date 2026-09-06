@@ -124,6 +124,16 @@ export const DOCK_ERA_PX = 108;
 export const TOP_PX_VERSUS = 68;
 
 /**
+ * What a collapsed deck reserves on a pointer device.
+ *
+ * The closed deck is one handle, so this is the handle plus the room to press
+ * it and nothing else — the desktop counterpart to `STRIP_PX_TOUCH`, which
+ * makes the same trade for the same reason on a phone. Everything the docks
+ * gave up goes to the board.
+ */
+export const STRIP_PX = 34;
+
+/**
  * Below this on either axis, a touch device is a phone rather than a tablet.
  *
  * The width bound is an iPad mini in portrait (744) staying on the roomy side;

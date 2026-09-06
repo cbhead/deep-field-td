@@ -1369,6 +1369,7 @@ button.path:hover { border-color: var(--accent); }
    than to #game-root now, so the board's own top offset has to be added back;
    without it the column would ride up into the top bar. */
 #race-col {
+  display: flex;
   top: calc(var(--board-y, var(--top-h, 0px)) + 8px);
   right: 10px;
   width: var(--race-col-w, 232px);
@@ -1525,3 +1526,17 @@ button.path:hover { border-color: var(--accent); }
 /* The sortie card's key, in the corner the build slot puts its own. Same
    position for the same kind of fact, so the two decks read as one keyboard. */
 .sortie kbd { position: absolute; left: 6px; top: 5px; border: 0; padding: 0; }
+
+/* Collapsed, the board is the whole point and everything else gets out of it.
+
+   The race strip and the opponent column are both overlays on the play area —
+   the strip always was, and the column reverts to its float once `td-docked`
+   comes off. Tab means "show me the board", so neither survives it.
+
+   Losing the opponent readout is the trade, and it is the one the design
+   already names: the strip is the record, the toast is the alarm. Toasts still
+   fire here, so a sortie landing or a wave clearing still reaches you; what
+   goes is the thing you would have had to look away from the board to read
+   anyway. Press Tab again and both come back. */
+.td-collapsed #race-hud,
+.td-collapsed #race-col { display: none; }

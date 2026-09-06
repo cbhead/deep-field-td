@@ -252,7 +252,12 @@ export function createRaceHud(
   // custom property and the stylesheet decides whether to honour it.
   const column = make(
     'div',
-    'position:absolute;z-index:5;display:flex;flex-direction:column;gap:8px;pointer-events:none',
+    // `display` is NOT set here, and that is deliberate. An inline display wins
+    // over the stylesheet, so `.td-collapsed #race-col { display: none }` would
+    // silently lose to it — the same way an inline width and right silently
+    // beat the docked column's geometry before this was cleaned up. Anything
+    // CSS may need to override belongs in CSS.
+    'position:absolute;z-index:5;flex-direction:column;gap:8px;pointer-events:none',
   );
   column.id = 'race-col';
   column.style.setProperty('--race-col-w', `${map.cols * TILE_PX + 24}px`);

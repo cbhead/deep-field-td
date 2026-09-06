@@ -1,4 +1,4 @@
-import { createRenderer } from './render/pixiApp.ts';
+import { createRenderer, setDeckCollapsed } from './render/pixiApp.ts';
 import { createTextures } from './render/textures.ts';
 import { buildMapLayer } from './render/mapLayer.ts';
 import { WorldView } from './render/worldView.ts';
@@ -566,6 +566,11 @@ async function startGame(
       },
     },
     togglePause,
+    // Collapsing the deck frees the room the docks reserved, so the board
+    // refits into it. See `setDeckCollapsed` for why this is an event.
+    deckToggled: () => {
+      setDeckCollapsed(!ui.deckOpen);
+    },
     audio: {
       apply: (prefs) => {
         audio.setVolume(prefs.volume);

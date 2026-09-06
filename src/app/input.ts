@@ -2,6 +2,7 @@ import type { Application } from 'pixi.js';
 import { SORTIES, SORTIE_IDS } from '../content/sorties.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { TILE_PX } from '../render/constants.ts';
+import { setDeckCollapsed } from '../render/pixiApp.ts';
 import { isUnlocked, towerAt } from '../sim/build.ts';
 import type { World } from '../sim/world.ts';
 import type { UiState } from './uiState.ts';
@@ -324,6 +325,8 @@ export function attachInput(
     if (ev.key === 'Tab') {
       ev.preventDefault();
       ui.deckOpen = !ui.deckOpen;
+      // Collapsing frees the room the docks reserved, so the board refits.
+      setDeckCollapsed(!ui.deckOpen);
       return;
     }
     if (ev.code === 'Space') {
