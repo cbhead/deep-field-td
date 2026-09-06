@@ -236,22 +236,35 @@ async function main(): Promise<void> {
               });
             }
           },
-          boot: (seed, levelId, diffId) => {
+          boot: (seed, levelId, diffId, mode) => {
             matchSeed = seed;
+            // The server's word on what this room is playing, not ours.
+            //
+            // This used to be `isVersus`, read off our own URL — so two clients
+            // in one room could boot different rule sets and nothing noticed.
+            // Versus turns `eras` on and eras cap the upgrade ceiling at the
+            // current rung, so the race-rules client upgraded freely from wave
+            // 1 while the versus-rules client could not upgrade anything until
+            // it bought era II. It read as "the joiner cannot upgrade towers".
+            //
+            // Our URL is still what we *asked* for, and it still decides the
+            // game when we are the one creating the room — the server takes it
+            // from the `hello`. It just stops being what we boot from.
+            const bootVersus = mode === 'versus';
             // The room's pick arrives unvalidated; unknown values fall back to
             // the baseline on BOTH clients, so a version-skewed pair still
             // plays the same board. Versus ignores the pick entirely — there
             // is one board, and letting a stale lobby choice send two players
             // to different maps is a failure with no upside.
-            const level = isVersus ? VERSUS_LEVEL : (levelById(levelId) ?? CAMPAIGN[0]!);
+            const level = bootVersus ? VERSUS_LEVEL : (levelById(levelId) ?? CAMPAIGN[0]!);
             const difficulty: DifficultyId =
               Object.hasOwn(DIFFICULTIES, diffId) ? (diffId as DifficultyId) : DEFAULT_DIFFICULTY;
             matchSector = `${level.name} · ${DIFFICULTIES[difficulty].name}`;
             lobby.remove();
             void startGame(mount, hudRoot, seed, {
               level,
-              rules: isVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty),
-              ...(isVersus
+              rules: bootVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty),
+              ...(bootVersus
                 ? {
                     // The relay stands in for the loopback: a launch goes out
                     // over the socket instead of straight back at us, and a
@@ -292,7 +305,10 @@ async function main(): Promise<void> {
                   lives: world.lives,
                   elapsedMs: Math.round(performance.now() - bootAt),
                   ...(document.hidden ? { hidden: true } : {}),
-                  ...(isVersus ? { era: world.era } : {}),
+                  // `bootVersus`, like everything else the world was built
+                  // from. On our own URL this would report an era for a world
+                  // that has no eras whenever the two disagreed.
+                  ...(bootVersus ? { era: world.era } : {}),
                 };
                 // The layout rides along only when it changed — most frames
                 // carry three numbers, a build frame carries the board.

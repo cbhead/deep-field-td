@@ -76,7 +76,7 @@ import { damageCreep, effectiveDamage } from '../src/sim/damage.ts';
 import { parseMap, isBuildableTile, mergeRunway, tileAt, tileOf } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep, type World } from '../src/sim/world.ts';
-import { DEFAULT_RULES, versusRules, type Rules } from '../src/sim/rules.ts';
+import { DEFAULT_RULES, resolveRules, versusRules, type Rules } from '../src/sim/rules.ts';
 import { advance, DT, TICK_HZ, type Accumulator } from '../src/app/loop.ts';
 import {
   idleGesture,
@@ -1247,6 +1247,62 @@ section('versus — V5 gate: eras');
 const VERSUS_RULES = versusRules(VERSUS_LEVEL, 'standard');
 const versusWorld = (): ReturnType<typeof createWorld> =>
   createWorld(parseMap(VERSUS), 4242, VERSUS_RULES);
+
+{
+  // -------------------------------------------------------------------------
+  // TWO CLIENTS IN ONE ROOM MUST BOOT ONE RULE SET.
+  //
+  // This is the shape of a bug that shipped. Each client decided versus-or-race
+  // from its OWN URL and nothing reconciled the two, so a room could hold one
+  // player on each. The server knew the room's mode all along and used it to
+  // settle; it simply never told anyone. `start` carries it now.
+  //
+  // What follows is why that was not cosmetic. Eras cap the upgrade ceiling at
+  // the current rung, so at era I a versus world can buy NO upgrade at all
+  // while a race world can buy every one of them. The player on the wrong side
+  // of the split reported it as "the joiner cannot upgrade towers", which is
+  // exactly what it looked like from inside.
+  //
+  // The wire itself is not reachable from here, so this gates the consequence:
+  // if the two rule sets ever stop differing this way the note above is stale,
+  // and while they do differ, mode has to keep arriving from one place.
+  // -------------------------------------------------------------------------
+  const raceAtEra1 = createWorld(parseMap(VERSUS), 4242, resolveRules(VERSUS_LEVEL, 'standard'));
+  const versusAtEra1 = versusWorld();
+  raceAtEra1.money = 100_000;
+  versusAtEra1.money = 100_000;
+
+  check(
+    raceAtEra1.era === versusAtEra1.era,
+    'race and versus start on the same rung',
+    `race ${raceAtEra1.era} · versus ${versusAtEra1.era}`,
+  );
+  check(
+    tierCeiling(versusAtEra1) === 1 && tierCeiling(raceAtEra1) === BALANCE.upgrade.maxTier,
+    'and the same rung means different ceilings',
+    `versus ${tierCeiling(versusAtEra1)} · race ${tierCeiling(raceAtEra1)}`,
+  );
+
+  // The damage, stated as the player met it: same board, same money, same
+  // station, one client can upgrade and the other cannot.
+  const placeLance = (w: ReturnType<typeof createWorld>): Tower => {
+    w.commands.push({ type: 'placeTower', defId: 'lance', col: 10, row: 2 });
+    stepWorld(w, DT);
+    return w.towers[0]!;
+  };
+  const raceTower = placeLance(raceAtEra1);
+  const versusTower = placeLance(versusAtEra1);
+  check(
+    upgradeError(raceAtEra1, raceTower, 'range') === null,
+    'a race client can upgrade at era I',
+    String(upgradeError(raceAtEra1, raceTower, 'range')),
+  );
+  check(
+    upgradeError(versusAtEra1, versusTower, 'range') === 'maxTier',
+    'and a versus client cannot — so mode may not be decided per-client',
+    String(upgradeError(versusAtEra1, versusTower, 'range')),
+  );
+}
 
 {
   // Every station sits on exactly one rung, the roster is spread across all

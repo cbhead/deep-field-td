@@ -42,8 +42,16 @@ export interface RaceHooks {
   /** Countdown has begun; boot() fires when it reaches zero. The seed rides
    *  along for display — it's the proof of fairness the mode rests on. */
   onCountdown(ms: number, seed: number): void;
-  /** Build the world with the server's seed and the room's pick. */
-  boot(seed: number, level: string, diff: string): void;
+  /**
+   * Build the world with the server's seed, pick and MODE.
+   *
+   * `mode` arrives here rather than being read off our own URL, because the
+   * URL is what we asked for and this is what the room is playing. Joining
+   * `?race=ABCD` when ABCD is a versus room gets you versus — the room already
+   * existed and had already decided. See the note on `start` in protocol.ts
+   * for what the two disagreeing actually cost.
+   */
+  boot(seed: number, level: string, diff: string, mode: MatchMode): void;
   /** The opponent's latest status blob. UI state only — the sim never sees it. */
   onPeer?(status: RaceStatus): void;
   /**
@@ -218,7 +226,9 @@ export class MatchController {
         hooks.onCountdown(msg.countdownMs, msg.seed);
         // Relative delay on purpose — wall clocks are never compared across
         // machines, so "start in 3000ms" is fair under any clock skew.
-        setTimeout(() => hooks.boot(msg.seed, msg.level, msg.diff), msg.countdownMs);
+        setTimeout(() => {
+          hooks.boot(msg.seed, msg.level, msg.diff, msg.mode);
+        }, msg.countdownMs);
         break;
       case 'error':
         hooks.onError(msg.reason);
