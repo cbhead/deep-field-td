@@ -4196,6 +4196,53 @@ section('hud · build slot states');
     `${oneRow}px vs ${LOGICAL_W}px — the wrap is required, not decorative`,
   );
 
+  // ---------------------------------------------------------------------------
+  // THE CAMPAIGN ROW HAS A THIRD SECTION, AND NOTHING WAS COUNTING IT.
+  //
+  // Every budget above models `build + detail`. The campaign row is
+  // `build | sep | detail | sep | send`, and the send column was never in the
+  // arithmetic — so `slotsWidth + DETAIL_CAP <= 1040` passed comfortably while
+  // the real row handed the inspector 197px of its 430px cap.
+  //
+  // At 197 the upgrade buttons overlap their own labels: `.path` column one is
+  // `minmax(0, 1fr)`, which shrinks below its content, and the text inside is
+  // `nowrap`, so it spills sideways over the pips and the price rather than
+  // wrapping. That shipped, and it was found in a README screenshot rather than
+  // here — which is exactly the failure this file exists to prevent.
+  //
+  // The measured floor is what the widest station needs, and the widest is not
+  // the obvious one: Salvage has the longest effect label *and* only two tracks,
+  // and two buttons in a hardcoded three-column grid each got a third of the
+  // width instead of a half. Sizing the columns to the actual button count took
+  // its requirement from 340px to 240.
+  //  The widest the campaign send column gets, measured across every wave of
+  //  every arc: its Send button, not its hint. Four gaps, not two — the row is
+  //  build | sep | detail | sep | send, which is five children.
+  const CAMPAIGN_SEND_PX = 160;
+  //  What the widest station's inspector needs, measured by shrinking the panel
+  //  until the upgrade buttons stop clipping. Lance is the worst at 265: PIERCE
+  //  is a long label and it is one of the ten stations carrying all three
+  //  tracks. Salvage and Sentinel look worse and are not — two buttons share the
+  //  width two ways now.
+  const DETAIL_MIN = 265;
+  const campaignRow = PANEL_PAD + slotsWidth + SEP_PX + SEP_PX + CAMPAIGN_SEND_PX + 4 * ROW_GAP;
+  check(
+    campaignRow + DETAIL_MIN <= LOGICAL_W,
+    'campaign deck: the row leaves the inspector room to render',
+    `${LOGICAL_W - campaignRow}px for detail, widest station needs ${DETAIL_MIN}px`,
+  );
+
+  // The cap the hint is held to is what keeps `send` at its button's width
+  // rather than its sentence's. Read from the stylesheet for the same reason the
+  // grid column count is: TypeScript does not read CSS, and this is a one-line
+  // deletion away from silently costing the inspector 79px again.
+  check(
+    /\.send \.hint \{[^}]*max-width:/.test(
+      readFileSync(new URL('../src/ui/styles.css', import.meta.url), 'utf8'),
+    ),
+    'and the send hint wraps rather than setting the column width',
+  );
+
   // And that the markup answers the overrun somehow. It used to wrap into two
   // rows; it now docks into four panels around the board, which answers the
   // same arithmetic by spending width the letterbox was wasting rather than

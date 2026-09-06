@@ -549,29 +549,52 @@ kbd {
    Two rows, not four: three of these sit under the portrait band inside the
    deck's 150px, and every extra row here is paid for at both ends of the
    panel. */
-.upgrades { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+/* Columns from the *actual* number of buttons, not a hardcoded three.
+   `repeat(3, 1fr)` looks equivalent and is not: a station with a withdrawn track
+   renders two buttons into three columns and each gets a third of the width
+   instead of a half. That is why Salvage — two tracks and the longest label in
+   the roster — needed 340px of panel where Lance needed 300, and it is most of
+   why the inspector overlapped itself at the width the campaign row actually
+   hands it. Sentinel has the same shape, so adding it made this common. */
+.upgrades { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; }
 .path {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 2px 6px;
-  padding: 4px 7px;
+  gap: 2px 4px;
+  padding: 4px 4px;
   border: 1px solid var(--panel-edge);
   border-radius: 6px;
   background: color-mix(in srgb, var(--slot) 75%, transparent);
   text-align: left;
 }
+/* `minmax(0, 1fr)` lets this column shrink below its own content, and `nowrap`
+   text in a too-small box does not wrap — it spills sideways over the pips and
+   the price. Clipping instead means a squeeze that gets past the gate degrades
+   into a truncated label rather than into two strings drawn on top of each
+   other. It should never fire; it is here so that when it does, it is legible. */
 .path label {
   display: flex;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 9px;
-  letter-spacing: .07em;
+  letter-spacing: .03em;
   text-transform: uppercase;
   color: var(--dim);
   cursor: inherit;
   white-space: nowrap;
 }
-.path b { font-size: 11px; font-weight: 600; color: var(--accent-soft); white-space: nowrap; }
+.path b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-soft);
+  white-space: nowrap;
+}
 .path em { font-style: normal; font-size: 10px; font-weight: 600; color: var(--accent-bright); justify-self: end; }
 /* Smaller than the portrait's collar arcs on purpose: at this width the pips
    are a count, not the teaching surface — and PIERCE plus three 6px pips is
@@ -614,9 +637,23 @@ button.path:hover { border-color: var(--accent); }
 /* ----------------------------------------------------------------- send */
 
 .send { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 9px; }
-.send .send-btn { padding: 11px 18px; font-size: 13px; border-radius: 8px; }
+/* 14px of side padding rather than 18. This button is the floor on how narrow
+   the send column can be, and the column's width is subtracted straight out of
+   the inspector's — at 18 the row left the inspector 267px where its widest
+   station needs 273. Four pixels a side is worth more here than it is there. */
+.send .send-btn { padding: 11px 14px; font-size: 13px; border-radius: 8px; }
 .send .send-btn.primary { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent); }
-.send .hint { font-size: 10.5px; color: var(--dim); }
+/* Capped so the hint wraps instead of setting the column's width.
+   The send column is `align-items: flex-end` over a button, the auto toggle and
+   this line, so its width is its widest child — and unwrapped, this sentence is
+   237px of a row that has 942px to divide between a 508px build grid, the
+   inspector and itself. That left the inspector 197px, which is where its
+   upgrade buttons started overlapping their own labels. Wrapped, the column
+   falls back to the Send button's width and the inspector gets ~276px.
+
+   Vertical room to wrap into is what the two-row deck bought: the send column
+   is ~131px tall inside a 200px deck. */
+.send .hint { max-width: 160px; font-size: 10.5px; color: var(--dim); }
 
 /* The standing order, directly under the single one it repeats.
 
