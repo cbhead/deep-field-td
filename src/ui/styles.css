@@ -1096,7 +1096,19 @@ button.path:hover { border-color: var(--accent); }
   background: none;
   border: 0;
   box-shadow: none;
+
+  /* TRANSPARENT TO THE POINTER, and this is load-bearing rather than tidy.
+     `.deck .panel` takes pointer events because a panel under the board is
+     always something you click; docked, the same element is stretched over the
+     WHOLE stage — the board included — so inheriting that made an invisible
+     click-eater across every buildable tile and no station could be placed.
+     The docks themselves re-arm below; only the empty space between them
+     falls through. */
+  pointer-events: none;
 }
+/* Everything that is actually a control takes the pointer back. */
+.td-docked .docks > section,
+.td-docked .docks .handle { pointer-events: auto; }
 
 /* Near-opaque, not translucent. Over a star field a see-through panel lets
    background elements read as controls — a star behind a build slot looks like
@@ -1509,3 +1521,7 @@ button.path:hover { border-color: var(--accent); }
    the only one covering tiles. Undocked it is still the only place any of this
    is said, so it stays. */
 .td-docked #race-hud { display: none; }
+
+/* The sortie card's key, in the corner the build slot puts its own. Same
+   position for the same kind of fact, so the two decks read as one keyboard. */
+.sortie kbd { position: absolute; left: 6px; top: 5px; border: 0; padding: 0; }

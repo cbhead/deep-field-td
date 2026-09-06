@@ -54,6 +54,14 @@ export interface SortieDef {
    * it has to stay true at wave 3 and at wave 30.
    */
   readonly weight: number;
+  /**
+   * The key that sends it, mirroring `TowerDef.hotkey`.
+   *
+   * QWERTY's top row, in table order, directly above the build slots' 1-6 —
+   * so the two decks are two rows of keys under the same hand, and which row
+   * you are on is which half of the mode you are playing.
+   */
+  readonly hotkey: string;
 }
 
 /**
@@ -63,16 +71,16 @@ export interface SortieDef {
  */
 export const SORTIES = {
   /** Era I — the baseline, and the swarm. Chip damage, cheap, easily answered. */
-  drifter: { enemy: 'drifter', era: 1, weight: 1 },
-  mote: { enemy: 'mote', era: 1, weight: 1 },
+  drifter: { enemy: 'drifter', era: 1, weight: 1, hotkey: 'q' },
+  mote: { enemy: 'mote', era: 1, weight: 1, hotkey: 'w' },
 
   /**
    * Era II — the two that punish a *thin* line rather than a weak one. A
    * Warden regenerates through a gap; a Cluster turns one kill into three
    * problems further back. Neither is stopped by raw damage in one place.
    */
-  warden: { enemy: 'warden', era: 2, weight: 1 },
-  cluster: { enemy: 'cluster', era: 2, weight: 1 },
+  warden: { enemy: 'warden', era: 2, weight: 1, hotkey: 'e' },
+  cluster: { enemy: 'cluster', era: 2, weight: 1, hotkey: 'r' },
 
   /**
    * Era III — the two that land hard. A Monolith is 150 hull that takes three
@@ -83,8 +91,8 @@ export const SORTIES = {
    * than derived, and they are what make the top of the ladder worth buying.
    * At weight 1 a Monolith would cost six Drifters to do a Drifter's damage.
    */
-  monolith: { enemy: 'monolith', era: 3, weight: 3 },
-  bulwark: { enemy: 'bulwark', era: 3, weight: 2 },
+  monolith: { enemy: 'monolith', era: 3, weight: 3, hotkey: 't' },
+  bulwark: { enemy: 'bulwark', era: 3, weight: 2, hotkey: 'y' },
 } as const satisfies Record<string, SortieDef>;
 
 export type SortieId = keyof typeof SORTIES;

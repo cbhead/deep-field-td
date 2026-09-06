@@ -1,4 +1,5 @@
 import type { Application } from 'pixi.js';
+import { SORTIES, SORTIE_IDS } from '../content/sorties.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { TILE_PX } from '../render/constants.ts';
 import { isUnlocked, towerAt } from '../sim/build.ts';
@@ -337,6 +338,22 @@ export function attachInput(
       // Arming and inspecting are mutually exclusive: both want the detail
       // column, and both draw a reach circle.
       if (ui.selected !== null) ui.inspecting = null;
+      return;
+    }
+
+    // The sortie row, Q–Y, directly above the build row's 1–6.
+    //
+    // Lower-cased because the key is a letter: `ev.key` is 'Q' with shift or
+    // caps lock held, and a hotkey that stopped working because caps lock was
+    // on would be indistinguishable from one that was never wired.
+    //
+    // Unlike arming, this SPENDS — so it goes through the same `sortie`
+    // command the deck button pushes rather than setting UI state, and the sim
+    // does the affordability and era checks in `sortieError`. A key that
+    // bypassed those would be a second, laxer way to buy.
+    const send = SORTIE_IDS.find((id) => SORTIES[id].hotkey === ev.key.toLowerCase());
+    if (send !== undefined && world.rules.sorties) {
+      world.commands.push({ type: 'sortie', sortie: send, lane: ui.sortieLane });
     }
   });
 

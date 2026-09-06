@@ -713,6 +713,7 @@ function renderSortieDeck(w: World, ui: UiState): string {
     return (
       `<button class="sortie${poor ? ' poor' : ''}" data-act="sortie" data-id="${id}"` +
       ` aria-label="Send ${ENEMIES[def.enemy].name} down ${w.map.routes[ui.sortieLane]?.id ?? 'lane'} for ${cost}">` +
+      `<kbd>${def.hotkey.toUpperCase()}</kbd>` +
       `${contactIcon(def.enemy, 22)}${weight}` +
       `<i class="sname">${ENEMIES[def.enemy].name}</i>` +
       `<b>${cost}</b><i class="shull">${hp} hull</i>` +

@@ -9,6 +9,7 @@
  * Milestone gates from the plan land here as they come due. M10 adds the
  * determinism gate (same seed → byte-identical wave log).
  */
+import { readFileSync } from 'node:fs';
 import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { VERSUS } from '../src/content/maps/versus.ts';
 import {
@@ -3726,6 +3727,71 @@ section('hud · build slot states');
   check(
     campaignDeck.includes('class="panel"') && !campaignDeck.includes('class="row"'),
     'campaign deck: still one row',
+  );
+
+  // -------------------------------------------------------------------------
+  // THE DOCKS DO NOT SWALLOW THE BOARD.
+  //
+  // `.deck .panel` takes pointer events, because a panel under the board is
+  // always something you click. Docked, that same element is stretched over
+  // the WHOLE stage with `inset: 0` — so inheriting the rule laid an invisible
+  // click-eater across every buildable tile and no station could be placed at
+  // all. Nothing threw, nothing logged, and every gate here still passed: the
+  // markup was right and the geometry was right, and the game was unplayable.
+  //
+  // Checked by reading the stylesheet because that is where the bug lives.
+  // Crude, and worth it for a failure this total and this quiet.
+  // -------------------------------------------------------------------------
+  const cssText = readFileSync(new URL('../src/ui/styles.css', import.meta.url), 'utf8');
+  const docksBlock = /\.panel\.docks\s*\{([^}]*)\}/.exec(cssText);
+  check(
+    docksBlock !== null && /pointer-events:\s*none/.test(docksBlock[1] ?? ''),
+    'the docked panel is transparent to the pointer',
+    docksBlock === null ? 'no .panel.docks rule found' : 'so the board underneath stays clickable',
+  );
+  check(
+    /\.docks\s*>\s*section[^{]*\{[^}]*pointer-events:\s*auto|\.docks\s*>\s*section,[\s\S]{0,80}?pointer-events:\s*auto/.test(
+      cssText,
+    ),
+    'and the docks themselves take it back',
+    'panels are controls; the space between them is not',
+  );
+
+  // -------------------------------------------------------------------------
+  // TWO ROWS OF KEYS, AND NO KEY IN BOTH.
+  //
+  // Build is 1-6 and send is Q-Y, one row above it. A collision would mean a
+  // key that armed a station *and* spent money on a contact, which is the
+  // worst possible way to find out.
+  // -------------------------------------------------------------------------
+  // Widened to string on purpose. As literal unions these two are provably
+  // disjoint and `includes` will not even typecheck — which is a real
+  // guarantee, but only while both tables stay `as const`. The gate is what
+  // survives someone loosening either type.
+  const sortieKeys: string[] = SORTIE_IDS.map((id) => SORTIES[id].hotkey);
+  const towerKeys: string[] = TOWER_IDS.map((id) => TOWERS[id].hotkey);
+  check(
+    sortieKeys.every((k) => k.length === 1 && k === k.toLowerCase()),
+    'every sortie has a single lower-case hotkey',
+    sortieKeys.join(' '),
+  );
+  check(
+    new Set(sortieKeys).size === sortieKeys.length,
+    'no two sorties share a key',
+    sortieKeys.join(' '),
+  );
+  const clash = sortieKeys.filter((k) => towerKeys.includes(k));
+  check(
+    clash.length === 0,
+    'no key both arms a station and sends a contact',
+    clash.length === 0 ? `build ${towerKeys.join('')} · send ${sortieKeys.join('')}` : clash.join(' '),
+  );
+  // Reserved by the input layer for things that are not a purchase.
+  const reserved = ['tab', ' ', 'escape'];
+  check(
+    sortieKeys.every((k) => !reserved.includes(k)),
+    'and none of them is a key the deck already owns',
+    reserved.join(' '),
   );
 
   // The shortfall is arithmetic, not decoration: it has to be the real number.
