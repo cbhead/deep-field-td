@@ -1,7 +1,7 @@
 import type { TowerDef } from './types.ts';
 
 /**
- * The six stations.
+ * The twelve stations.
  *
  * **Ids match the names on purpose.** They were once `arrow`/`cannon`/`frost`
  * and the display names moved on without them; that mismatch is the kind that
@@ -9,12 +9,21 @@ import type { TowerDef } from './types.ts';
  * now one word. Renaming later costs a typed find/replace the compiler polices
  * completely, plus the `.t-<id>` classes in styles.css that it does not.
  *
- * **Every station is the answer to something, and to only one thing.** That is
- * the property the roster is tuned for, and `tools/check.ts`'s matchup matrix
- * is what checks it — a row of zeros is a station that beats everything, a
- * column nothing clears is a contact with no counter, and both are failures.
+ * **Every station is the answer to something, and no station is the answer to
+ * everything.** That is the property the roster is tuned for, and the matchup
+ * matrix in `tools/check.ts` is what reports on it.
  *
- * The six, and the question each answers:
+ * This rule used to end "and to only one thing", and it is worth recording why
+ * it does not any more. That version was written for six stations and was never
+ * actually enforced: the matrix section prints its table and contains no
+ * `check()` call at all, so nothing failed when Nova and Filament grew into rows
+ * of zeros — stations that beat everything, which the rule named as a failure.
+ * Doubling the roster did not spend the property. Reading the matrix honestly is
+ * what found it already spent, and twelve stations cannot hold single-purpose
+ * purity anyway. What survives is the half the matrix can actually see: no row
+ * of zeros, and no column nothing clears.
+ *
+ * The twelve, and the question each answers:
  *
  * - **Lance** pierces — contacts *lined up* along a straight.
  * - **Nova** detonates — contacts *clumped* together.
@@ -29,6 +38,23 @@ import type { TowerDef } from './types.ts';
  *   guns are heavy and slow. Support, and the first station whose target is a
  *   tower rather than a contact, so it wins 0/5 alone for the same structural
  *   reason Singularity does and must be read the same way.
+ * - **Solvent** strips plating — the answer to armour for a line that already
+ *   has damage and cannot land it. It does not out-hit a Bulwark, it turns
+ *   everything else back on.
+ * - **Breaker** tears overshields and holds them down. Deliberately a poor gun
+ *   into bare hull; that asymmetry is the whole station.
+ * - **Ember** burns, and the burn walks out of reach with the target — the only
+ *   damage on the board that keeps working past the edge of a range circle.
+ * - **Repulsor** shoves contacts back down the lane. Buys road rather than
+ *   damage, which is what the last line of a defence actually needs.
+ * - **Salvage** pays a cut on every wreck in reach. Never shoots; the third
+ *   support, and the first whose output is money.
+ * - **Sentinel** has no reach at all and therefore no blind spot — the answer to
+ *   the leak, and the only station whose placement is not a decision.
+ *
+ * Eleven of those twelve are a circle around a tile, which means eleven of them
+ * pose the same question: *where*. Sentinel is the one that does not, and it is
+ * priced as insurance rather than as damage.
  *
  * Costs are set against range, not against raw damage, because range buys time
  * on target: a short-reach station needs more damage per dollar just to break
@@ -57,6 +83,18 @@ export const TOWERS = {
     rampPerSecond: 0,
     rampMax: 1,
     buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
     // 2 → 3 → 4 contacts passed through. Pierce is the identity, so the effect
     // path buys more of it — each tier makes a well-placed straight pay more.
     effectUpgrade: { name: 'Pierce', perTier: { pierce: 1 } },
@@ -68,9 +106,43 @@ export const TOWERS = {
     id: 'nova',
     name: 'Nova',
     blurb: 'Blast damage. The answer to a swarm.',
-    cost: 115,
+    // **Brought down, and the matchup matrix is why.** Nova was printing a row
+    // of zeros — losing no waves against any contact — which the header of this
+    // file names outright as a failure. It never fired as a test because the
+    // matrix section prints its table and contains no assertion at all.
+    //
+    // 115 → 122 and 22 → 21, and **the smallness of that is the finding.** The
+    // first attempt was 130/18, which read as a modest 13%/18% trim and took
+    // Standard from clearing all eight sectors to failing from sector 4 on.
+    // Even 125/21 broke two boards. The campaign is tuned far more tightly
+    // around this one station than its numbers suggest — which is the same fact
+    // the row of zeros was reporting, priced in lives instead of duels.
+    //
+    // Two reasons it lands harder than the sticker:
+    //
+    //  - **Cost compounds through the upgrade ladder.** `upgrade.costFactor`
+    //    prices every tier off the base, so +7 here raises Mk II and Mk III on
+    //    all three paths.
+    //  - **The damage cut is amplified by armour, because armour is flat.** A
+    //    direct hit on a Bulwark goes from keeping 77% to 76%, but the splash
+    //    *rim* goes from 7.7 − 5 = 2.7 to 7.35 − 5 = 2.35 — the rim is where a
+    //    blast station actually loses ground to plating.
+    //
+    // **Swept against the campaign, not guessed**, and `hpGrowth` deliberately
+    // did *not* move to pay for it: dropping it to 1.22 also clears the arc, and
+    // it does so by making the whole game easier, which is the one outcome that
+    // would undo the point of the change. Verified at 5/5 on every sector at
+    // Standard and 3/3 on the continuous run.
+    //
+    // **It is only safe because Solvent ships alongside it.** Nova was the
+    // roster's designated answer to armour and `enemies.ts` sizes Bulwark around
+    // that; cutting it without a second answer would leave plating
+    // under-answered. If a sweep ever shows armour becoming unanswerable, the
+    // next lever is `fireInterval` rather than more damage — that cuts dps
+    // without touching per-hit weight, so the anti-armour identity survives.
+    cost: 122,
     range: 2.5,
-    damage: 22,
+    damage: 21,
     fireInterval: 1.4,
     projectileSpeed: 9,
     pierce: 0,
@@ -84,6 +156,18 @@ export const TOWERS = {
     rampPerSecond: 0,
     rampMax: 1,
     buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
     // 0.8 → 1.05 → 1.3 tile blast. Radius rather than falloff because a wider
     // ring is legible on the board — the blast event carries the real radius,
     // so the drawn circle grows with the purchase.
@@ -114,6 +198,18 @@ export const TOWERS = {
     rampPerSecond: 0,
     rampMax: 1,
     buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
     // 80% → 74% → 68% speed, held 0.9s → 1.2s → 1.5s. Both dials move a little
     // rather than one a lot: a much lower factor alone approaches a stop (the
     // classic way a slow breaks a tower defense), and duration alone is
@@ -154,6 +250,18 @@ export const TOWERS = {
     rampPerSecond: 0,
     rampMax: 1,
     buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
     // 3 → 4 → 5 jumps. Jumps, not falloff: extra hops keep the "worse than
     // Lance into a line, better into a scatter" identity, where softer falloff
     // would creep toward beating Lance at its own condition.
@@ -196,6 +304,18 @@ export const TOWERS = {
     rampPerSecond: 0.8,
     rampMax: 3,
     buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
     // Ceiling ×3 → ×3.75 → ×4.5, spin-up 0.8 → 1.0 → 1.2/s. Both rise so time
     // to the ceiling stays near 2.5s — a higher ceiling alone would mean a burn
     // that never finishes charging against anything that dies. rampMax leads
@@ -281,6 +401,18 @@ export const TOWERS = {
     rampPerSecond: 0,
     rampMax: 1,
     buffShotsPerSecond: 0.35,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
     // 0.35 → 0.45 → 0.55/s. At Mk III a fed Nova runs at 1.26/s, +77% damage
     // per second — large, but priced by the per-path escalation at $495 on top
     // of the build, where a second Overclock buying the same rate somewhere
@@ -292,6 +424,312 @@ export const TOWERS = {
     // worth more than a faster one, so it is the wave that makes rate a
     // question worth asking.
     unlockWave: 6,
+    era: 2,
+  },
+  solvent: {
+    id: 'solvent',
+    name: 'Solvent',
+    blurb: 'Strips plating. Everything else in reach hits harder.',
+    cost: 95,
+    range: 2.6,
+    // A token 2, the same statement Singularity's 3 makes: this station is not
+    // here to kill anything. It is not zero, because a support that also reads
+    // as inert on the board is a control nobody trusts.
+    damage: 2,
+    fireInterval: 0.35,
+    // Near-hitscan, like Singularity and Arc. A visible shell would read as a
+    // slow gun rather than as something dissolving armour on contact.
+    projectileSpeed: 40,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
+    buffShotsPerSecond: 0,
+    // Four hits to the ceiling, about 1.4s on one target. Against Bulwark's 5
+    // that is "mostly gone"; against Ironclad's 11 it is "you have to invest",
+    // which is the arc the two armoured contacts are meant to describe.
+    shredPerHit: 1,
+    shredMax: 4,
+    shredSeconds: 3,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
+    // Ceiling 4 → 6 → 8, bite 1 → 1.5 → 2. The ceiling leads because it is the
+    // number the inspector previews, the same convention Filament's `rampMax`
+    // sets; the bite follows so time-to-ceiling stays near a second and a half
+    // rather than stretching out as the ceiling rises.
+    effectUpgrade: { name: 'Strip', perTier: { shredMax: 2, shredPerHit: 0.5 } },
+    hotkey: '7',
+    unlockWave: 6,
+    era: 2,
+  },
+
+  breaker: {
+    id: 'breaker',
+    name: 'Breaker',
+    blurb: 'Tears overshields open and holds them down.',
+    cost: 90,
+    range: 2.7,
+    damage: 9,
+    fireInterval: 0.9,
+    projectileSpeed: 16,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
+    buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    // 10 dps into hull, 30 into shield. Below average against anything bare, and
+    // that asymmetry is the identity rather than a cost paid for it — a breaker
+    // that was also a decent gun would just be a better gun.
+    shieldFactor: 3,
+    // On top of the regen delay every hit already resets. The distinction is the
+    // point: `shieldTimer` says "someone is still shooting", this says "it was
+    // broken", and only the second one survives you switching targets.
+    shieldLockSeconds: 2.5,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
+    // ×3 → ×4 → ×5 into shield, held 2.5 → 3.0 → 3.5s. The multiplier leads: it
+    // is what the inspector previews and what the player is actually buying.
+    effectUpgrade: { name: 'Break', perTier: { shieldFactor: 1, shieldLockSeconds: 0.5 } },
+    hotkey: '8',
+    unlockWave: 6,
+    era: 2,
+  },
+
+  ember: {
+    id: 'ember',
+    name: 'Ember',
+    blurb: 'Sets contacts alight. The burn walks out of reach with them.',
+    cost: 100,
+    range: 2.5,
+    damage: 6,
+    fireInterval: 0.8,
+    projectileSpeed: 12,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
+    buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    // 5 a tick for 4 ticks — 20 free damage that does not care whether the
+    // contact is still in reach. Armour is deliberately its weakness: 5 against
+    // Ironclad's 11 floors out, the same axis Filament is weak on, which is what
+    // keeps neither of them a general answer to "something tough".
+    burnDamage: 5,
+    burnSeconds: 4,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
+    // 5 → 8 → 11 a tick, over 4 → 5 → 6s. Damage leads; duration follows so the
+    // burn keeps outliving the walk out of range rather than only hitting harder
+    // inside it.
+    effectUpgrade: { name: 'Burn', perTier: { burnDamage: 3, burnSeconds: 1 } },
+    hotkey: '9',
+    /** Opens with the first Monolith — the first hull worth burning down. */
+    unlockWave: 4,
+    era: 3,
+  },
+
+  repulsor: {
+    id: 'repulsor',
+    name: 'Repulsor',
+    blurb: 'Shoves contacts back down the lane. Buys road, not damage.',
+    cost: 120,
+    // Short on purpose. This is a last line, and a long-reach shove would push
+    // contacts backward through the part of the board that was already working.
+    range: 2.2,
+    damage: 5,
+    // Slow on purpose, and the slowest gun in the roster. A fast shove is a
+    // stun-lock, which is the classic way a tower defense breaks.
+    fireInterval: 1.6,
+    projectileSpeed: 20,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
+    buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    // Just under a tile, so a shove is legible without teleporting anything.
+    // The cooldown is longer than the fire interval, which means a second
+    // Repulsor on the same corner adds coverage and not a lock — see
+    // `TowerDef.knockbackCooldown`.
+    knockbackTiles: 0.9,
+    knockbackCooldown: 1.2,
+    bountyBonus: 0,
+    volleyTargets: 1,
+    boardWide: false,
+    // 0.9 → 1.25 → 1.6 tiles. Distance only: a shorter cooldown is the dial that
+    // turns this back into a lock, so the effect path is not allowed to touch it.
+    effectUpgrade: { name: 'Shove', perTier: { knockbackTiles: 0.35 } },
+    hotkey: '0',
+    unlockWave: 7,
+    era: 3,
+  },
+
+  salvage: {
+    id: 'salvage',
+    name: 'Salvage',
+    blurb: 'Pays a cut on every wreck inside its reach. Never shoots.',
+    // Priced above every gun because it pays itself back — the only station on
+    // the board where cost is recovered rather than merely spent.
+    cost: 130,
+    // The salvage radius, reusing `range` exactly as Overclock reuses it: the
+    // placement ghost already draws a reach circle from this field and
+    // `rangeAtTier` already computes it, so a second radius would be new
+    // machinery saying what this one already says.
+    range: 2.4,
+    // Zero damage and zero interval together are the "this station does not
+    // shoot" idiom Overclock establishes. One guard in `fireTowers` reads the
+    // interval; nothing reads the rest.
+    damage: 0,
+    fireInterval: 0,
+    projectileSpeed: 0,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
+    buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    // **The number to watch, and the one most likely to be wrong.** The roster
+    // already records that two supports must stay a mistake: at $80 Overclock,
+    // `singularity + overclock` beat either alone, which makes stacking support
+    // strictly correct and is the one outcome this roster must not have. Salvage
+    // is the third support and the same trap is one price change away.
+    bountyBonus: 0.35,
+    volleyTargets: 1,
+    boardWide: false,
+    // 35% → 47% → 59%. Sized so a maxed Salvage over a killing field is worth
+    // about a station, not about a second board.
+    effectUpgrade: { name: 'Salvage', perTier: { bountyBonus: 0.12 } },
+    hotkey: '-',
+    unlockWave: 0,
+    era: 1,
+  },
+
+  sentinel: {
+    id: 'sentinel',
+    name: 'Sentinel',
+    blurb: 'No reach and no blind spot. Shoots whatever is closest to the core.',
+    // The most expensive station on the board, and the price is not for its
+    // damage — 13 dps is a Lance at nearly twice the cost. What it buys is that
+    // there is no wrong tile to put it on.
+    cost: 140,
+    // **Unused. See `boardWide`.** Left at 0 rather than at some large number
+    // because a big radius would be a lie the placement ghost would then draw:
+    // this station does not have a huge circle, it has no circle.
+    range: 0,
+    boardWide: true,
+    // Heavy and slow, and both halves are the constraint. Per-hit weight means
+    // armour barely troubles it, which it should not — a station that cannot be
+    // out-positioned must not also be out-ranged by plating. The 2s interval is
+    // what stops "never misses coverage" becoming "answers everything": it
+    // fires thirty times a wave, so volume walks straight past it.
+    damage: 26,
+    fireInterval: 2,
+    projectileSpeed: 22,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
+    buffShotsPerSecond: 0,
+    shredPerHit: 0,
+    shredMax: 0,
+    shredSeconds: 0,
+    shieldFactor: 1,
+    shieldLockSeconds: 0,
+    burnDamage: 0,
+    burnSeconds: 0,
+    knockbackTiles: 0,
+    knockbackCooldown: 0,
+    bountyBonus: 0,
+    // One at a time at Mk I. Targeting is not a choice here and the inspector
+    // says so: it always takes the contact closest to the core, because "the one
+    // about to cost you a life" is the only target a station with no reach has
+    // any business preferring.
+    volleyTargets: 1,
+    // 1 → 2 → 3 of the most dangerous contacts on the board, wherever they are.
+    // The one upgrade in the roster that widens *coverage* rather than a radius,
+    // which is the only way this station can be deepened without giving it the
+    // reach it is defined by not having.
+    effectUpgrade: { name: 'Watch', perTier: { volleyTargets: 1 } },
+    hotkey: '=',
+    /**
+     * Opens on the wave after the first Monolith, when contacts start surviving
+     * the run down the board and a leak stops being a mistake and starts being
+     * arithmetic. Its own wave, so the roster's one rangeless station is not
+     * taught in a crowd.
+     */
+    unlockWave: 5,
     era: 2,
   },
 } as const satisfies Record<string, TowerDef>;

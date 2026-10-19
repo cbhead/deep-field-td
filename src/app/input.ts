@@ -1,6 +1,8 @@
 import type { Application } from 'pixi.js';
+import { SORTIES, SORTIE_IDS } from '../content/sorties.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { TILE_PX } from '../render/constants.ts';
+import { setDeckCollapsed } from '../render/pixiApp.ts';
 import { isUnlocked, towerAt } from '../sim/build.ts';
 import type { World } from '../sim/world.ts';
 import type { UiState } from './uiState.ts';
@@ -323,10 +325,21 @@ export function attachInput(
     if (ev.key === 'Tab') {
       ev.preventDefault();
       ui.deckOpen = !ui.deckOpen;
+      // Collapsing frees the room the docks reserved, so the board refits.
+      setDeckCollapsed(!ui.deckOpen);
       return;
     }
     if (ev.code === 'Space') {
       ev.preventDefault();
+      // Shift+Space is "send every wave" to Space's "send this one". Pairing
+      // them on one key is the whole reason to spend a modifier here: the
+      // standing order and the single order are the same verb.
+      if (ev.shiftKey) {
+        if (world.rules.autoStart) {
+          world.commands.push({ type: 'setAutoStart', on: !world.wave.autoStart });
+        }
+        return;
+      }
       world.commands.push({ type: 'startWave' });
       return;
     }
@@ -337,6 +350,22 @@ export function attachInput(
       // Arming and inspecting are mutually exclusive: both want the detail
       // column, and both draw a reach circle.
       if (ui.selected !== null) ui.inspecting = null;
+      return;
+    }
+
+    // The sortie row, Q–Y, directly above the build row's 1–6.
+    //
+    // Lower-cased because the key is a letter: `ev.key` is 'Q' with shift or
+    // caps lock held, and a hotkey that stopped working because caps lock was
+    // on would be indistinguishable from one that was never wired.
+    //
+    // Unlike arming, this SPENDS — so it goes through the same `sortie`
+    // command the deck button pushes rather than setting UI state, and the sim
+    // does the affordability and era checks in `sortieError`. A key that
+    // bypassed those would be a second, laxer way to buy.
+    const send = SORTIE_IDS.find((id) => SORTIES[id].hotkey === ev.key.toLowerCase());
+    if (send !== undefined && world.rules.sorties) {
+      world.commands.push({ type: 'sortie', sortie: send, lane: ui.sortieLane });
     }
   });
 

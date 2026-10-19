@@ -18,8 +18,20 @@ export const tilesToPx = (tiles: number): number => tiles * TILE_PX;
  *
  * Lives here rather than only in CSS because `fitCanvas` has to letterbox the
  * board and the deck as one unit; the stylesheet reads it back as `--deck-h`.
+ *
+ * **150 → 200 is what twelve stations cost, and they cost it here rather than
+ * in width.** Six slots in one row and six-by-two are both 508px wide, so the
+ * deck's horizontal budget — the thing `check.ts` used to gate — did not move at
+ * all. The second row is 74px of slot plus an 8px gap, and the remaining slack
+ * is the panel's own padding.
+ *
+ * Priced before it was taken: this is free at 1440x900 and 1512x850, where the
+ * fit is width-bound, and costs 5.4% of board scale at 1280x800 and 5.9% at
+ * 1366x768. Keeping the old 86px slot height instead would have wanted 224 here
+ * and cost 8%, which is why the slot shrank rather than the deck growing to meet
+ * it.
  */
-export const DECK_PX = 150;
+export const DECK_PX = 200;
 
 /**
  * Height the top bar reserves above the board, in board-space px.
@@ -52,7 +64,13 @@ export const TAP_PX = 56;
  * simply missed. iPad portrait is width-bound and pays nothing for this at all.
  */
 export const TOP_PX_TOUCH = 66;
-export const DECK_PX_TOUCH = 212;
+/**
+ * 212 → 224 for the same reason `DECK_PX` moved, and by a smaller step because
+ * the touch deck already had slack. Two rows of slots plus the section heading
+ * want 173.5px; 212 would technically hold them, with about half a pixel left
+ * for the panel's own breathing. Costs 1.4% of board scale on an iPad landscape.
+ */
+export const DECK_PX_TOUCH = 224;
 
 /**
  * What a short viewport reserves for the deck: the collapsed strip only.
@@ -64,6 +82,92 @@ export const DECK_PX_TOUCH = 212;
  * does instead.
  */
 export const STRIP_PX_TOUCH = 48;
+
+/**
+ * What a second deck row costs, in board-space px.
+ *
+ * Versus renders two sections the campaign never does — the sortie deck and its
+ * own Send button — and the deck is a fixed composition laid out against 1040px
+ * (see `fitCanvas`), so the five sections together overran the row by about
+ * 500px. Flex spent the overrun on the two items that could give: the inspector
+ * collapsed to 68px, narrower than one of its three upgrade buttons, and the
+ * Send control was pushed clear off the panel's right edge. `renderDeck` wraps
+ * into two rows there instead, and this is what the second row is paid for
+ * with — one control row plus the gap above it.
+ *
+ * Additive rather than a second pair of constants so both chrome tiers derive
+ * from the heights they already had; a taller deck shrinks the board on a
+ * height-bound window, which is the same trade `DECK_PX_TOUCH` documents.
+ */
+export const DECK_ROW_PX = 124;
+
+/**
+ * Versus lays out in four docks around the board rather than one panel under it.
+ *
+ * **The board stops being the whole stage.** Every other mode's stage is the
+ * board's width, with reserved strips above and below; here there are columns
+ * either side as well, so `fitCanvas` scales a box wider than the board and
+ * `--board-x` says where inside it the canvas actually sits. Nothing overlaps
+ * the board at any size, which is the reason this beats floating the HUD over
+ * it — the alternative the two-row deck was already straining against.
+ *
+ * **These are the mock's numbers, converted rather than copied.** The design
+ * draws a 1440x810 canvas whose board is 888x512; ours is 1040x600, so every
+ * figure here is the drawn one times 1040/888. That is also how the one figure
+ * the spec states in prose — "detail column 488px right" — is known to be
+ * wrong: at 488 the right column starts at x=932 and the board runs to 1008, so
+ * the two would overlap by 76px. The drawn 400 scales to 468 and closes the
+ * canvas exactly, and the drawing is what the rest of the layout agrees with.
+ *
+ * Gaps come in two sizes for the same reason the mock has two: the outer margin
+ * holds the docks off the letterbox edge, the inner one only has to separate two
+ * panels that are already bounded.
+ */
+export const DOCK_GAP = 14;
+export const DOCK_MARGIN = 23;
+/**
+ * Build column, and the era square beneath it.
+ *
+ * **103 → 186, because twelve slots do not fit in one column and the failure was
+ * not going to be visible.** The docked build dock is a vertical strip about
+ * 674px tall inside the stage. Six slots is 106.5px each; twelve is 49.8px,
+ * which at the 0.855 stage scale on a 1440x900 is **42.5 CSS px** — under the
+ * 44px convention and far under `TAP_PX`. Nothing asserted a minimum slot
+ * height, so this would have degraded silently into unhittable controls.
+ *
+ * So the column becomes two columns of six: 18px of padding plus 2x80 plus an
+ * 8px gap. Slots come out 80 x 106.5 — the same height they are today and 5px
+ * narrower.
+ *
+ * The bill is board scale, and it is real: the docked stage goes 1685 → 1768,
+ * so a 1440-wide window scales 0.855 → 0.814, a 4.8% loss. Nothing changes at
+ * 1768px or wider. `DOCK_DETAIL_PX` deliberately does *not* shrink to pay for
+ * this — it is gated at above `DETAIL_CAP` precisely so it cannot be raided.
+ */
+export const DOCK_BUILD_PX = 186;
+/** Detail column, full height at the right. */
+export const DOCK_DETAIL_PX = 468;
+/** Sortie deck, directly beneath the board and the same width as it. */
+export const DOCK_SORTIE_PX = 225;
+/** Era square, bottom-left, under the build column. */
+export const DOCK_ERA_PX = 108;
+/**
+ * A taller top bar than any other mode's, because it carries more.
+ *
+ * The wave overview and the send control both move up here, so 46px stops being
+ * enough — the mock draws 58 against its 888 board, which is this against ours.
+ */
+export const TOP_PX_VERSUS = 68;
+
+/**
+ * What a collapsed deck reserves on a pointer device.
+ *
+ * The closed deck is one handle, so this is the handle plus the room to press
+ * it and nothing else — the desktop counterpart to `STRIP_PX_TOUCH`, which
+ * makes the same trade for the same reason on a phone. Everything the docks
+ * gave up goes to the board.
+ */
+export const STRIP_PX = 34;
 
 /**
  * Below this on either axis, a touch device is a phone rather than a tablet.

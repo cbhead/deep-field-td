@@ -76,6 +76,19 @@ export interface Rules {
    * leave possible.
    */
   readonly sorties: boolean;
+
+  /**
+   * Whether the player may arm auto-rush — sending every wave the instant its
+   * intermission opens, and collecting the full bonus for it.
+   *
+   * True in the campaign and in Race, false in versus. Not a balance judgement
+   * about the feature but a scoping one: versus wave timing is entangled with
+   * the sortie economy, since contacts arriving from an opponent are on nobody's
+   * intermission clock, and the interaction is unswept. A flag rather than a
+   * check for `sorties` being on, because "has a send deck" and "may skip its
+   * own intermission" are two different facts that happen to coincide today.
+   */
+  readonly autoStart: boolean;
 }
 
 /**
@@ -103,6 +116,7 @@ export const DEFAULT_RULES: Rules = {
   endless: false,
   eras: false,
   sorties: false,
+  autoStart: true,
 };
 
 /**
@@ -163,6 +177,7 @@ export function resolveRules(
     endless: false,
     eras: false,
     sorties: false,
+    autoStart: true,
   };
 }
 
@@ -180,5 +195,11 @@ export function resolveRules(
  * file where both are asserted would be genuinely confusing.
  */
 export function versusRules(level: LevelDef, difficulty: DifficultyId): Rules {
-  return { ...resolveRules(level, difficulty), endless: true, eras: true, sorties: true };
+  return {
+    ...resolveRules(level, difficulty),
+    endless: true,
+    eras: true,
+    sorties: true,
+    autoStart: false,
+  };
 }

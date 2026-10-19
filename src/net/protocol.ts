@@ -87,7 +87,19 @@ export type C2S =
 export type S2C =
   | { t: 'joined'; playerId: string; room: string }
   | { t: 'lobby'; players: LobbyPlayer[]; level: string; diff: string }
-  | { t: 'start'; seed: number; countdownMs: number; level: string; diff: string }
+  /**
+   * `mode` is the room's, and it is the server's word rather than the client's.
+   *
+   * Each client used to decide versus-or-race from its own URL, and nothing
+   * reconciled the two — so a room could hold one player on versus rules and
+   * one on race rules, which is not a cosmetic split: versus turns `eras` on,
+   * and eras cap the upgrade ceiling at the current rung. The race-rules player
+   * could upgrade freely from wave 1 and the versus-rules player could not
+   * upgrade at all until they bought era II. Same room, same board, two games.
+   *
+   * The room already knew. It just never said.
+   */
+  | { t: 'start'; seed: number; countdownMs: number; level: string; diff: string; mode: MatchMode }
   | {
       t: 'peer';
       wave: number;

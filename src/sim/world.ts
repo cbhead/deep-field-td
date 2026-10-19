@@ -38,6 +38,23 @@ export interface WaveState {
    * not what "cleared" means any more.
    */
   clearedThrough: number;
+
+  /**
+   * Send every wave the instant its intermission opens, without being asked.
+   *
+   * **Simulation state, not a preference**, which is why it lives here beside
+   * the phase rather than in `UiPrefs` with the reach circles and the volume.
+   * Everything in `UiPrefs` changes what is drawn; this changes what happens and
+   * what money the player has, so it has to arrive through the command stream
+   * like every other decision — see `Command.setAutoStart`.
+   *
+   * Note this is *not* "start waves automatically": waves already do that when
+   * the intermission runs out. It is the rush, made standing. The bonus is paid
+   * in full, so it is a real economic choice and not only a convenience — and it
+   * costs the same thing a manual rush costs, which is fighting the next wave on
+   * top of the one still walking.
+   */
+  autoStart: boolean;
 }
 
 /**
@@ -159,6 +176,8 @@ export function createWorld(map: MapDef, seed: number, rules: Rules = DEFAULT_RU
       spawned: 0,
       dispatchedThrough: -1,
       clearedThrough: -1,
+      // Off. A setting that changes the economy must be chosen, never inherited.
+      autoStart: false,
     },
     creeps: [],
     towers: [],
@@ -274,6 +293,14 @@ export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): C
     shield,
     maxShield: shield,
     shieldTimer: 0,
+    shieldLock: 0,
+    shred: 0,
+    shredTimer: 0,
+    burnTimer: 0,
+    burnDamage: 0,
+    burnTick: 0,
+    burnSource: null,
+    knockTimer: 0,
     bounty: opts.bounty ?? def.bounty,
     leakDamage: opts.leakDamage ?? def.leakDamage,
     wave: opts.wave ?? w.wave.index,

@@ -1,8 +1,10 @@
+import { BALANCE } from '../../content/balance.ts';
 import { ENEMIES } from '../../content/enemies.ts';
 import type { TowerStats } from '../../content/types.ts';
 import { damageCreep } from '../damage.ts';
 import type { Creep, EntityId, Projectile, Tower } from '../types.ts';
 import { towerById, type World } from '../world.ts';
+import { placeAtProgress } from './movement.ts';
 
 /** Safety net: no projectile may outlive this, whatever the numbers say. */
 const MAX_FLIGHT_SECONDS = 5;
@@ -141,10 +143,20 @@ function stepPiercing(w: World, p: Projectile, s: TowerStats, dt: number): void 
   }
 }
 
-/** Damage plus any on-hit status. The one place both are applied together. */
+/**
+ * Damage plus any on-hit status. The one place both are applied together.
+ *
+ * Splash and chain both come through here, so every status a station carries
+ * rides its blast and its jumps for free — which is why none of the six
+ * mechanics below needed a branch anywhere on the flight path.
+ */
 function hit(w: World, c: Creep, amount: number, s: TowerStats, source: Tower | undefined): void {
-  damageCreep(w, c, amount, source);
+  damageCreep(w, c, amount, source, s.shieldFactor);
   applySlow(c, s);
+  applyShred(c, s);
+  applyBurn(c, s, source);
+  applyShieldLock(c, s);
+  applyKnockback(w, c, s);
 }
 
 /**
@@ -238,12 +250,92 @@ function chain(w: World, p: Projectile, s: TowerStats, source: Tower | undefined
 function applySlow(c: Creep, s: TowerStats): void {
   if (s.slowSeconds <= 0 || s.slowFactor >= 1) return;
 
-  if (c.slowTimer <= 0 || s.slowFactor < c.slowFactor) c.slowFactor = s.slowFactor;
+  // Resistance shrinks the *depth* of the slow rather than blocking it outright,
+  // so a partially resistant contact is a real design position and not just a
+  // flag. At `slowResist: 1` the factor comes out at exactly 1 and the guard
+  // below drops the whole thing, timer included — an immune contact must not
+  // carry a slow ring showing a slow that is doing nothing.
+  const resist = ENEMIES[c.defId].slowResist;
+  const factor = 1 - (1 - s.slowFactor) * (1 - resist);
+  if (factor >= 1) return;
+
+  if (c.slowTimer <= 0 || factor < c.slowFactor) c.slowFactor = factor;
   c.slowTimer = Math.max(c.slowTimer, s.slowSeconds);
   // The ring reads `slowTimer / slowMax`, so the denominator has to grow with a
   // refresh that extended the slow — otherwise a re-hit would show an arc
   // stuck at full and the countdown would stop meaning anything.
   c.slowMax = Math.max(c.slowMax, c.slowTimer);
+}
+
+/**
+ * Accumulate, do not refresh — the opposite of the slow above, on purpose.
+ *
+ * A strip is a plate being worn away by repeated hits, so each one has to add.
+ * The ceiling comes off the *shot's* stats rather than the station's current
+ * ones, so upgrading mid-stack cannot retroactively deepen a strip already on a
+ * contact; that is the same snapshot rule every other stat on a projectile
+ * follows.
+ */
+function applyShred(c: Creep, s: TowerStats): void {
+  if (s.shredPerHit <= 0) return;
+
+  c.shred = Math.min(s.shredMax, c.shred + s.shredPerHit);
+  c.shredTimer = Math.max(c.shredTimer, s.shredSeconds);
+}
+
+/**
+ * Refresh and take the higher damage, never stack.
+ *
+ * Stacking burns is the same failure as stacking slows: two cheap stations
+ * would multiply into something neither was priced as. Taking the higher damage
+ * rather than the newer one means an upgraded station's burn is never overwritten
+ * by a weaker one that happened to land second.
+ *
+ * `burnSource` is carried so kills credit the station that lit the fire. Without
+ * it the inspector reports the whole station as having done nothing, which reads
+ * as broken rather than as subtle.
+ */
+function applyBurn(c: Creep, s: TowerStats, source: Tower | undefined): void {
+  if (s.burnDamage <= 0 || s.burnSeconds <= 0) return;
+
+  if (s.burnDamage >= c.burnDamage) {
+    c.burnDamage = s.burnDamage;
+    c.burnSource = source?.id ?? null;
+  }
+  // Reset the cadence only when there was no burn running, so re-hitting a
+  // contact cannot walk the next tick forward indefinitely and prevent it.
+  if (c.burnTimer <= 0) c.burnTick = BALANCE.burnTick;
+  c.burnTimer = Math.max(c.burnTimer, s.burnSeconds);
+}
+
+/**
+ * Hold shield regeneration down for a while after the hit.
+ *
+ * Separate from the `shieldRegenDelay` every hit already resets in
+ * `damageCreep`: that one says "someone is still shooting", this says "this was
+ * broken open", and only the second survives the station switching targets.
+ */
+function applyShieldLock(c: Creep, s: TowerStats): void {
+  if (s.shieldLockSeconds <= 0) return;
+  c.shieldLock = Math.max(c.shieldLock, s.shieldLockSeconds);
+}
+
+/**
+ * Shove a contact back down its own lane.
+ *
+ * The cooldown is the whole safety property — see `TowerDef.knockbackCooldown`.
+ * Without it, two shoving stations covering one corner hold a contact in place
+ * forever, which is the classic way a tower defense solves itself.
+ *
+ * `placeAtProgress` writes `x`, `y`, `leg` and `progress` together so
+ * `moveCreeps` needs no knowledge of this at all; it reads those four and finds
+ * them consistent. The lane itself is never changed.
+ */
+function applyKnockback(w: World, c: Creep, s: TowerStats): void {
+  if (s.knockbackTiles <= 0 || c.knockTimer > 0) return;
+
+  placeAtProgress(w, c, c.progress - s.knockbackTiles);
+  c.knockTimer = s.knockbackCooldown;
 }
 
 /** Squared distance from a point to a segment. No `sqrt` — ordering is all we need. */

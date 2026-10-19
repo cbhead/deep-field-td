@@ -92,6 +92,27 @@ function rankedSpots(map: MapDef, range: number): [number, number][] {
   return scored.map((s) => [s.col, s.row] as [number, number]);
 }
 
+/**
+ * The cycle this probe builds — five stations, representative rather than
+ * exhaustive, and deliberately unchanged when the roster doubled.
+ *
+ * It was a hardcoded five that had already drifted once: Overclock shipped and
+ * was never added. The obvious fix — derive it from the roster — was tried and
+ * is wrong, which is worth recording because it looks right. Filtering to
+ * `damage > 0` gives ten stations at twelve, and several of those do token
+ * damage the way Singularity does; cycling them as if they were guns dilutes
+ * the build and the probe then reports an arc that is unclearable when it is
+ * not. Adding even *one* more (Ember, a real gun) cost Sluice five of five
+ * wins and broke the continuous run at Standard.
+ *
+ * So this list is a **player archetype, not an inventory**: one of each way of
+ * dealing damage — pierce, blast, slow, chain, ramp. Widening it does not make
+ * the probe more representative, it makes it a worse player.
+ *
+ * The stations left out are not unmeasured. `sweep.ts`'s core-plus-candidate
+ * block is the tool that asks whether an individual station is worth a slot,
+ * and it covers all nine non-core stations by construction.
+ */
 const BUILD: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament'];
 
 /**

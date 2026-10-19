@@ -240,8 +240,6 @@ export interface Theme {
     readonly tower: 'hex' | 'roundRect';
     readonly towerPad: number;
     readonly towerCorner: number;
-    /** Barrel hub radius, as a fraction of the tile. */
-    readonly hubRatio: number;
     readonly towerFillAlpha: number;
     /** Internal bracing lines on the hex station. 0 disables them. */
     readonly towerStrutAlpha: number;
@@ -266,19 +264,17 @@ export interface Theme {
     /**
      * Tier marks baked into the station, as fractions of the tile.
      *
-     * A row of pips low on the hex, one per tier, plus a core that grows and
-     * gains a halo. Both are baked in `BAKE_NEUTRAL` so they take the station's
-     * own tint like everything else — a higher tier must read as a *stronger*
-     * station, never as a different one.
+     * A row of pips low on the hex, one per tier, baked in `BAKE_NEUTRAL` so
+     * they take the station's own tint like everything else — a higher tier must
+     * read as a *stronger* station, never as a different one.
+     *
+     * The pips are now the whole of it. A growing core and its halo used to say
+     * the same thing a second and third time, from the middle of the hex, where
+     * they covered the one part of a mark that identifies the station.
      */
     readonly pipRadius: number;
     readonly pipRowY: number;
     readonly pipSpacing: number;
-    /** Core radius multiplier per tier above the first. */
-    readonly tierHubGrowth: number;
-    /** Halo radius as a multiple of the core, and its alpha per tier above the first. */
-    readonly tierGlowRatio: number;
-    readonly tierGlowAlpha: number;
   };
 
   /** Screen-anchored chrome. Emitted as CSS custom properties at boot. */
@@ -688,6 +684,43 @@ export const DEEP_FIELD: Theme = {
     // the second, 53° clear of both neighbours, at 121.0 separation — no longer
     // the tightest pair in the roster.
     overclock: 0xb4c868,
+
+    // ------------------------------------------------------------------ the six
+    //
+    // **Two floors bind here, and the second one was undocumented.** The obvious
+    // one is the pairwise separation gate: every pair of station tints must
+    // clear 85, and doubling the roster took that from 15 pairs to 66. The other
+    // is `check.ts`'s "the centre line never out-shines a station" gate, which
+    // requires every tint to out-luminate the brightest route centre line —
+    // Frontline's, at 0.4506 relative luminance. Filament clears it by 0.012.
+    // **That rules out dark and deep tints entirely**; the whole twelve-colour
+    // palette has to live in pastel territory, which is most of why the six
+    // below are bright.
+    //
+    // Chosen by running the gate's own redmean function rather than by eye — the
+    // same method Overclock's note above records, and for the same reason it
+    // records it. The result: the worst pair across all 66 is still 91.2, the
+    // *existing* lance/singularity pair, and every pair involving a new tint is
+    // 100.0 or better. Adding six stations did not make the palette tighter.
+    //
+    // Three caveats worth having written down:
+    //
+    //  - Redmean weights green 4×, so it is generous about leaf/emerald/jade.
+    //    They pass at 100–101 but they are three greens, and they are the set to
+    //    look at on a real board before trusting the number.
+    //  - `azure` shares Singularity's hue family (194° against 189°). They
+    //    separate on lightness, not hue — 0.489 against 0.761.
+    //  - `azure` has only 0.038 of luminance headroom over the centre line.
+    //    **Do not darken it.**
+    //
+    // Nothing here enters the warm magenta-pink family; that is still reserved
+    // for contacts, and Nova remains the roster's one warm exception.
+    solvent: 0xe8e35e,
+    breaker: 0x6ae963,
+    ember: 0x46f196,
+    repulsor: 0x71ead6,
+    salvage: 0x48c8ef,
+    sentinel: 0xe7cef3,
   },
 
   // Contacts share one warm family so "something is coming" reads before "what
@@ -720,6 +753,17 @@ export const DEEP_FIELD: Theme = {
      * needs to spot early enough to stop pouring chip damage into it.
      */
     bulwark: 0xc9a6ae,
+    /**
+     * Plated, and more so — desaturated further along the same axis Bulwark
+     * moves on, because they ask the same question and this one asks it harder.
+     * Reading as a *family* is the point: a player who learned to stop pouring
+     * chip damage into a Bulwark should recognise this on sight.
+     */
+    ironclad: 0xb08d94,
+    /** Protected. Washed like Warden, a touch cooler, for the same reason. */
+    aegis: 0xe0aad4,
+    /** Swarm, at the hot end of Mote's coral — small, fast, and gone. */
+    skimmer: 0xff9d86,
   },
 
   feedback: {
@@ -747,7 +791,6 @@ export const DEEP_FIELD: Theme = {
     tower: 'hex',
     towerPad: 3,
     towerCorner: 7,
-    hubRatio: 0.1375,
     towerFillAlpha: 0.2,
     towerStrutAlpha: 0.3,
     strokeWidth: 2.2,
@@ -762,9 +805,6 @@ export const DEEP_FIELD: Theme = {
     pipRadius: 0.045,
     pipRowY: 0.795,
     pipSpacing: 0.15,
-    tierHubGrowth: 0.24,
-    tierGlowRatio: 2.3,
-    tierGlowAlpha: 0.17,
   },
 
   hud: {

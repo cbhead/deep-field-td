@@ -181,11 +181,14 @@ export const WAVES_FORK: readonly WaveDef[] = [
   wave(north(5, 0.9), south(5, 0.9, 3)), //            the same wave, one lane at a time
   wave(s(8, 0.75), s(8, 0.3, 5, 'mote')),
   wave(s(7, 0.85), north(2, 2.6, 4, 'bulwark')), //       armour commits to one side
-  wave(s(9, 0.6), s(4, 1.7, 4, 'cluster')),
+  // Skimmers arrive here, as a taste. Fork is the first board with somewhere
+  // for them to be: a slow bunches contacts into a file, and these will not be
+  // bunched, so the two lanes stop being one problem answered twice.
+  wave(s(9, 0.6), s(4, 1.7, 4, 'cluster'), s(3, 0.8, 9, 'skimmer')),
   wave(s(7, 0.75), s(2, 2.8, 3, 'monolith'), s(12, 0.3, 8, 'mote')),
   wave(s(8, 0.65), s(5, 1.4, 3, 'warden'), south(2, 2.4, 9, 'bulwark')),
   wave(s(9, 0.55), s(5, 1.4, 4, 'cluster'), s(4, 2.4, 9, 'monolith')),
-  wave(north(6, 0.7), south(6, 0.7), s(5, 1.3, 5, 'warden')), //  both sides, at once
+  wave(north(6, 0.7), south(6, 0.7), s(5, 1.3, 5, 'warden'), s(3, 0.8, 10, 'skimmer')), //  both sides
   wave(s(6, 0.6), s(3, 1.9, 2, 'monolith'), s(4, 1.4, 6, 'bulwark'), s(10, 0.25, 11, 'mote')),
   wave(s(7, 0.55), s(5, 1.2, 3, 'cluster'), s(4, 1.6, 8, 'bulwark')),
   wave(
@@ -195,6 +198,7 @@ export const WAVES_FORK: readonly WaveDef[] = [
     s(5, 1.2, 9, 'warden'),
     s(4, 1.4, 12, 'cluster'),
     s(12, 0.25, 15, 'mote'),
+    s(5, 0.6, 17, 'skimmer'),
   ),];
 
 /**
@@ -230,7 +234,15 @@ export const WAVES_DELTA: readonly WaveDef[] = [
   // not a difficulty curve, it is a wall — the run used to end here.
   wave(rim(9, 2.2), well(9, 0.95, 3, 'mote'), well(4, 2.1, 8)),
   wave(rim(1, 5.7, 0, 'bulwark'), rim(6, 2.4, 4), well(9, 0.95, 2, 'mote')), // the thesis, stated
-  wave(rim(1, 6.1, 0, 'monolith'), rim(5, 2.6, 5), well(3, 3.6, 3, 'cluster'), well(8, 0.95, 9, 'mote')),
+  // Aegis, as a taste. Warden taught that a gap hands a shield back; this one
+  // regenerates through a gap small enough that you thought you had none.
+  // Aegis arrives inside this wave rather than as one of its own. Warden taught
+  // that a gap hands a shield back; this one regenerates through a gap small
+  // enough that you thought you had none. Two of them, and nothing else new —
+  // the arc is twelve waves long and `hpGrowth` is swept against that length, so
+  // a thirteenth wave to introduce a contact would be relitigating the one
+  // number in the game with a table of evidence behind it.
+  wave(rim(1, 6.1, 0, 'monolith'), rim(1, 6.0, 5, 'aegis'), rim(4, 2.9, 8), well(3, 3.6, 3, 'cluster'), well(8, 0.95, 9, 'mote')),
   wave(rim(3, 4.7, 0, 'bulwark'), rim(3, 3.8, 5, 'warden'), well(8, 0.75, 3, 'mote'), well(5, 1.9, 9)),
   wave(rim(3, 4.5, 0, 'bulwark'), rim(3, 5.7, 5, 'monolith'), well(14, 0.55, 4, 'mote')),
   wave(rim(6, 3.3, 0, 'warden'), well(7, 2.8, 3, 'cluster'), well(11, 0.95, 8, 'mote')),
@@ -266,7 +278,7 @@ export const WAVES_BRAID: readonly WaveDef[] = [
   wave(s(9, 0.45), s(16, 0.6, 3, 'mote'), s(3, 1.9, 8, 'bulwark')),
   wave(s(8, 0.5), s(7, 1.3, 2, 'cluster'), s(6, 1.1, 7, 'warden')),
   wave(s(10, 0.4), s(19, 0.35, 3, 'mote'), s(6, 1.5, 9, 'bulwark')),
-  wave(s(9, 0.45), s(8, 1.2, 2, 'cluster'), s(7, 1.1, 6, 'warden'), s(3, 2.2, 11, 'monolith')),
+  wave(s(9, 0.45), s(8, 1.2, 2, 'cluster'), s(7, 1.1, 6, 'warden'), s(4, 0.7, 11, 'skimmer')),
   wave(s(11, 0.35), s(22, 0.35, 3, 'mote'), s(6, 1.3, 8, 'bulwark')),
   wave(s(9, 0.4), s(8, 1.1, 2, 'cluster'), s(7, 1, 6, 'warden'), s(14, 0.35, 12, 'mote')),
   wave(
@@ -364,7 +376,7 @@ export const WAVES_CROWN: readonly WaveDef[] = [
   // so this wave is the board's actual question — and hull down the inner lanes
   // at the same time made it a statement instead. Two Monoliths, not four.
   wave(high(4, 2), low(4, 2), innerHigh(2, 4.7, 5, 'monolith'), innerLow(2, 4.7, 5, 'monolith')),
-  wave(s(5, 1.1), s(4, 2.7, 3, 'cluster'), s(4, 3.3, 7, 'warden'), s(3, 4, 11, 'bulwark')),
+  wave(s(5, 1.1), s(4, 2.7, 3, 'cluster'), s(4, 3.3, 7, 'aegis'), s(2, 5.2, 11, 'ironclad')),
   wave(
     s(7, 0.8), //                                      finale: everything, down every road
     s(3, 3.8, 3, 'monolith'),
@@ -411,9 +423,9 @@ export const WAVES_FRONTLINE: readonly WaveDef[] = [
   wave(s(8, 1.2), s(4, 3.4, 4, 'cluster')),
   wave(s(6, 1.4), s(2, 5.5, 3, 'monolith')), //           first hull
   wave(s(8, 1.1), s(6, 2.6, 4, 'warden')),
-  wave(s(6, 1.3), s(4, 3, 3, 'bulwark'), s(8, 0.8, 9, 'mote')),
-  wave(s(10, 1), s(4, 3.2, 4, 'cluster'), s(4, 3.6, 9, 'warden')),
-  wave(s(6, 1.4), s(3, 4.6, 2, 'monolith'), s(4, 2.8, 8, 'bulwark')),
+  wave(s(6, 1.3), s(4, 3, 3, 'bulwark'), s(6, 0.6, 9, 'skimmer')),
+  wave(s(10, 1), s(4, 3.2, 4, 'cluster'), s(4, 3.6, 9, 'warden'), s(2, 4.4, 14, 'aegis')),
+  wave(s(6, 1.4), s(3, 4.6, 2, 'monolith'), s(4, 2.8, 8, 'bulwark'), s(2, 5.1, 14, 'ironclad')),
   wave(s(8, 1), s(14, 0.5, 3, 'mote'), s(4, 3.4, 10, 'cluster')),
   // The turn. Hull first, motes last, so the contacts still walking when this
   // becomes wave 1 again are the ones a fresh wave can be fought alongside.

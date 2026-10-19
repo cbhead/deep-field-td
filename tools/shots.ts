@@ -119,14 +119,27 @@ const SHOTS: readonly Shot[] = [
     file: 'gameplay.png',
     url: `${BASE}/?level=level01&difficulty=standard&seed=deepfield`,
     setup: `
-      // Funded first, or the last four placements silently fail for want of
-      // cash and the board is photographed two stations deep. The money is a
-      // prop for the photograph; the placements still go through the same
-      // command queue a click would.
-      td.world.money = 4000;
+      // Funded first, or the last placements silently fail for want of cash and
+      // the board is photographed two stations deep. The money is a prop for the
+      // photograph; the placements still go through the same command queue a
+      // click would.
+      td.world.money = 8000;
+      // ...and so is the wave index. Half the roster is gated behind a wave, so
+      // a capture taken at wave 1 can only ever show the four stations the game
+      // opens with — which is a photograph of a six-station game the roster
+      // stopped being. Advancing the clock is the same kind of prop the money
+      // is: it buys the picture access to what the deck actually holds, and
+      // placementError still refuses anything genuinely illegal.
+      td.world.wave.index = 7;
+      // Settled as well as advanced. Moving the index alone leaves waves 1-7
+      // dispatched-but-never-cleared, so the settlement pass fires seven clear
+      // events the instant the shot starts and photographs a "+$0 · 0 kills"
+      // toast over the board — a picture of a defence that killed nothing.
+      td.world.wave.dispatchedThrough = 6;
+      td.world.wave.clearedThrough = 6;
       td.loop.speed = 2;
-      ${PLACE('lance', 6, 4)}${PLACE('lance', 9, 8)}${PLACE('nova', 14, 9)}
-      ${PLACE('singularity', 12, 4)}${PLACE('lance', 20, 6)}${PLACE('nova', 21, 11)}
+      ${PLACE('lance', 6, 4)}${PLACE('nova', 14, 9)}${PLACE('singularity', 12, 4)}
+      ${PLACE('solvent', 9, 8)}${PLACE('ember', 20, 6)}${PLACE('sentinel', 21, 11)}
       td.world.commands.push({ type: 'startWave' });
       ${AWAIT_CONTACTS}
     `,
@@ -137,16 +150,45 @@ const SHOTS: readonly Shot[] = [
     file: 'inspector.png',
     url: `${BASE}/?level=level01&difficulty=standard&seed=deepfield`,
     setup: `
-      td.world.money = 4000;
-      ${PLACE('singularity', 12, 4)}
+      td.world.money = 8000;
+      // Staged at the wave Ember actually opens on, not at the gameplay shot's
+      // wave 8. The station has to be *doing* something in an inspector shot,
+      // and three towers against wave-8 hulls kill nothing in the time the
+      // capture can wait — that read as "0 kills" on the panel being sold.
+      td.world.wave.index = 4;
+      td.world.wave.dispatchedThrough = 3;
+      td.world.wave.clearedThrough = 3;
+      // Ember rather than Singularity: it carries all three upgrade tracks, so
+      // the panel still shows the full ladder, and its burn is a mechanic line
+      // the old captures had no way to illustrate.
+      ${PLACE('ember', 12, 4)}
       await new Promise((r) => requestAnimationFrame(r));
       const t = td.world.towers.at(-1);
       td.world.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
       td.world.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
       td.world.commands.push({ type: 'upgradeTower', id: t.id, path: 'effect' });
-      ${PLACE('nova', 14, 9)}${PLACE('lance', 9, 8)}
+      ${PLACE('nova', 14, 9)}${PLACE('lance', 9, 8)}${PLACE('arc', 20, 6)}
       td.world.commands.push({ type: 'startWave' });
-      await new Promise((r) => setTimeout(r, 2600));
+      // Held until the wave is *spawning*, not for a fixed number of seconds.
+      //
+      // The phase is load-bearing for this particular picture and it took a bad
+      // capture to notice: during an intermission the send block carries the
+      // long "sending early pays..." hint, which is 237px wide and squeezes the
+      // detail column from its 430px cap down to 197 — narrow enough that the
+      // three upgrade buttons overlap their own labels. Mid-spawn the hint is
+      // "Wait for it to finish spawning" and the panel has room. A fixed sleep
+      // lands on whichever side of that the balance happens to put it, which is
+      // exactly the drift AWAIT_CONTACTS exists to avoid.
+      await new Promise((done) => {
+        const give_up = Date.now() + 20000;
+        const poll = setInterval(() => {
+          const spawning = td.world.wave.phase === 'spawning';
+          const live = td.world.creeps.filter((c) => !c.dead).length >= 4;
+          if (!(spawning && live) && Date.now() < give_up) return;
+          clearInterval(poll);
+          done();
+        }, 100);
+      });
       // Select it, so the panel under inspection is the one being photographed.
       td.ui.inspecting = t.id;
     `,

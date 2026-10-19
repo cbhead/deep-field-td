@@ -27,9 +27,19 @@ export function beginWave(w: World): void {
     return;
   }
 
-  // Captured before the timer is reset. The auto-start path arrives here with
-  // the timer already at or below zero, so it earns nothing — the bonus is
-  // strictly payment for time the player chose to give up.
+  // Captured before the timer is reset.
+  //
+  // **This used to say the bonus was payment for time the player *chose* to
+  // give up, and that the timer expiring earns nothing.** The second half is
+  // still true and the first is not: `wave.autoStart` sends every wave the
+  // instant its intermission opens and is paid in full, so the same bonus is now
+  // claimed by a choice made once rather than every wave.
+  //
+  // The rule that replaces it: **the bonus is payment for the overlap risk
+  // taken.** That is what the money was ever really buying — a rushed wave lands
+  // on top of one still walking — and it is a thing an armed auto-rush takes
+  // every bit as much as a player hitting the key. What the timer running out
+  // earns nothing for is that it takes no risk at all.
   const secondsSaved = Math.max(0, s.timer);
 
   s.plan = planWave(w.seed, s.index, w.rules, w.map.routes);
@@ -51,7 +61,15 @@ export function updateWaves(w: World, dt: number): void {
   switch (s.phase) {
     case 'intermission':
       s.timer -= dt;
-      if (s.timer <= 0) beginWave(w);
+      // Armed auto-rush sends on the first tick of the intermission, with the
+      // timer still at its full value — so it collects the whole bonus, which is
+      // the entire point of it being a decision rather than a convenience.
+      //
+      // Routed through the same `beginWave` the key press uses, on the tick
+      // *after* the phase opens rather than inline where spawning ends. One code
+      // path, and `beginWave` moves the phase to 'spawning' immediately, so a
+      // per-tick test can only fire once however long the branch is live.
+      if (s.autoStart || s.timer <= 0) beginWave(w);
       break;
 
     case 'spawning': {

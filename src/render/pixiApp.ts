@@ -2,10 +2,19 @@ import { Application, Container } from 'pixi.js';
 import {
   DECK_PX,
   DECK_PX_TOUCH,
+  DECK_ROW_PX,
+  DOCK_BUILD_PX,
+  DOCK_DETAIL_PX,
+  DOCK_ERA_PX,
+  DOCK_GAP,
+  DOCK_MARGIN,
+  DOCK_SORTIE_PX,
   isCompactViewport,
+  STRIP_PX,
   STRIP_PX_TOUCH,
   TOP_PX,
   TOP_PX_TOUCH,
+  TOP_PX_VERSUS,
 } from './constants.ts';
 import type { SectorField } from './theme.ts';
 
@@ -27,12 +36,21 @@ export interface Renderer {
   layers: Layers;
 }
 
-/** Canvas size is dictated by the map, so it is passed in rather than assumed. */
+/**
+ * Canvas size is dictated by the map, so it is passed in rather than assumed.
+ *
+ * `versus` decides the whole shape of the chrome, not just its height: the
+ * campaign reserves strips above and below the board, versus docks four panels
+ * around it. It is reserved space rather than a render concern, which is why it
+ * has to arrive here — board and chrome letterbox as one stack, and the stack is
+ * a different size in the two modes.
+ */
 export async function createRenderer(
   mount: HTMLElement,
   width: number,
   height: number,
   field: SectorField,
+  versus = false,
 ): Promise<Renderer> {
   const app = new Application();
 
@@ -61,9 +79,10 @@ export async function createRenderer(
   // v8: `app.canvas`, not `app.view`.
   mount.appendChild(app.canvas);
 
-  fitCanvas(app);
+  fitting = { app, versus, collapsed: false };
+  fitCanvas(app, versus, false);
   watchViewport(() => {
-    fitCanvas(app);
+    fitCanvas(app, versus, fitting?.collapsed ?? false);
   });
 
   const layers: Layers = {
@@ -124,27 +143,93 @@ export const boardScale = (): number => lastScale;
 
 type ChromeTier = 'desktop' | 'roomy' | 'compact';
 
+interface Chrome {
+  readonly top: number;
+  readonly deck: number;
+  /** Board-space px reserved left and right of the canvas. Zero unless docked. */
+  readonly left: number;
+  readonly right: number;
+  readonly tier: ChromeTier;
+  /** Four docks around the board rather than one panel beneath it. */
+  readonly docked: boolean;
+}
+
 /**
  * How much chrome to reserve, from the raw viewport ALONE.
  *
  * Not from `--board-scale`: the chrome height feeds the scale, so reading the
  * scale back here is the same feedback loop `fitCanvas` documents below, one
- * level up. And not from `ui.deckOpen` either — that would be loop-free, but it
- * would rescale the whole board every time the player pressed Tab, moving every
- * tile out from under a placement gesture already in flight.
+ * level up.
+ *
+ * **`collapsed` is passed in, and this used to refuse it.** The old note here
+ * said reading `ui.deckOpen` would rescale the board every time Tab was
+ * pressed, moving every tile out from under a placement gesture in flight. The
+ * hazard is real; the conclusion was too strong. Rescaling on Tab is now the
+ * *point* — a collapsed deck reserves no docks, and the board takes the room —
+ * and the hazard is handled by direction rather than by refusal: this function
+ * still reads no UI state, the deck pushes the change through
+ * `setDeckCollapsed`, and Tab comes from the same hand that would be dragging,
+ * so it cannot land mid-gesture the way a window resize can.
+ *
+ * **Versus on a pointer device docks; everywhere else strips.** The four-dock
+ * layout spends 973px of width it does not have on a phone — the detail column
+ * alone is 468 — and the design says so itself: compact and touch are the one
+ * part of it left open, with the build column and era square named as the
+ * natural bottom sheet and the sortie deck explicitly undecided at phone height.
+ * Until that is decided, a touch versus board keeps the two-row deck it already
+ * had, which fits and works.
  */
 function chromeFor(
   touch: boolean,
   vw: number,
   vh: number,
-): { top: number; deck: number; tier: ChromeTier } {
-  if (!touch) return { top: TOP_PX, deck: DECK_PX, tier: 'desktop' };
+  versus: boolean,
+  collapsed: boolean,
+): Chrome {
+  const strip = { left: 0, right: 0, docked: false };
+  // Versus's second row, added to whichever tier's height would otherwise apply.
+  const extra = versus ? DECK_ROW_PX : 0;
+
+  // Collapsed, the deck is one handle and the docks are not drawn — so none of
+  // the room they need should still be reserved. The stage drops from 1685x944
+  // to 1040x702 and everything the chrome gives up goes to the board.
+  //
+  // What that is worth depends entirely on the window, which is worth stating
+  // because it is not obvious: the docked stage is 1685 wide, so on anything
+  // wider than that the board is already at 1:1 and collapsing buys *nothing*.
+  // It pays on laptops, where the fit is width-bound — 0.76 to 1.0 at 1280x800,
+  // 0.86 to 1.0 at 1440x900, 0.90 to 1.0 on a 1512-wide MacBook. Measure before
+  // changing any of these numbers; the first version of this comment claimed a
+  // gain at 1700x1000, where there is none.
+  //
+  // Only the top bar survives. It is the only place cash, lives and the send
+  // control exist now that the era rail and the deck have moved off it, and a
+  // full-screen board you cannot spend money from is a screenshot, not a mode.
+  if (collapsed) {
+    return { ...strip, top: versus ? TOP_PX_VERSUS : TOP_PX, deck: STRIP_PX, tier: 'desktop' };
+  }
+
+  if (!touch) {
+    if (!versus) return { ...strip, top: TOP_PX, deck: DECK_PX, tier: 'desktop' };
+    return {
+      top: TOP_PX_VERSUS,
+      // Under the board: the gap, the sortie deck, and the margin below it.
+      deck: DOCK_GAP + DOCK_SORTIE_PX + DOCK_MARGIN,
+      left: DOCK_MARGIN + DOCK_BUILD_PX + DOCK_GAP,
+      right: DOCK_GAP + DOCK_DETAIL_PX + DOCK_MARGIN,
+      tier: 'desktop',
+      docked: true,
+    };
+  }
   // A phone is best-effort, and there the board size wins over the button size,
   // because at that scale no amount of reserved chrome makes the buttons big
   // enough anyway — so reserve the collapsed strip and give the rest to board.
+  // Compact reserves the *closed* strip and overlays when opened, so a second
+  // row costs it nothing here; `.td-compact .deck .panel.rows` gives it the
+  // height at the point it is actually shown.
   return isCompactViewport(touch, vw, vh)
-    ? { top: TOP_PX, deck: STRIP_PX_TOUCH, tier: 'compact' }
-    : { top: TOP_PX_TOUCH, deck: DECK_PX_TOUCH, tier: 'roomy' };
+    ? { ...strip, top: TOP_PX, deck: STRIP_PX_TOUCH, tier: 'compact' }
+    : { ...strip, top: TOP_PX_TOUCH, deck: DECK_PX_TOUCH + extra, tier: 'roomy' };
 }
 
 /**
@@ -187,30 +272,60 @@ function watchViewport(refit: () => void): void {
   });
 }
 
-/** Last (viewport, tier) actually fitted, so repeat triggers cost nothing. */
+/** Last (viewport, tier, collapsed) fitted, so repeat triggers cost nothing. */
 let lastFit = '';
 
-function fitCanvas(app: Application): void {
+/**
+ * The live fit, so the deck can ask for a new one when it opens or closes.
+ *
+ * `chromeFor` still refuses to read `ui.deckOpen` itself — see its own note on
+ * why reading UI state inside a measurement is the wrong direction. This is the
+ * other direction: the deck *tells* the renderer, once, on the frame the state
+ * changed, and nothing in the measurement path learns what a deck is.
+ *
+ * The hazard the original comment named is real and is why this is a push
+ * rather than a poll: refitting rescales the board, which moves every tile
+ * under a placement gesture already in flight. Tab is a deliberate act by the
+ * same hand that would be dragging, so it cannot arrive mid-drag the way a
+ * window resize can — and `setDeckCollapsed` is a no-op unless the value
+ * actually changed, so an unchanged frame never refits.
+ */
+let fitting: { app: Application; versus: boolean; collapsed: boolean } | null = null;
+
+export function setDeckCollapsed(collapsed: boolean): void {
+  if (fitting === null || fitting.collapsed === collapsed) return;
+  fitting.collapsed = collapsed;
+  fitCanvas(fitting.app, fitting.versus, collapsed);
+}
+
+function fitCanvas(app: Application, versus: boolean, collapsed = false): void {
   const viewport = document.documentElement;
   const vw = viewport.clientWidth;
   const vh = viewport.clientHeight;
 
   const touch = matchMedia('(pointer: coarse)').matches;
-  const chrome = chromeFor(touch, vw, vh);
+  const chrome = chromeFor(touch, vw, vh, versus, collapsed);
 
   // ResizeObserver fires on every pixel of Safari's toolbar sliding away, so
   // this has to be cheap when nothing meaningful changed. It is also the
   // backstop that turns any accidental write-measure loop into a no-op rather
   // than a spin.
-  const sig = `${vw}x${vh}|${chrome.tier}`;
+  const sig = `${vw}x${vh}|${chrome.tier}|${collapsed}`;
   if (sig === lastFit) return;
   lastFit = sig;
 
-  // The deck's height is reserved beneath the board, so the two letterbox as a
+  // Chrome is reserved around the board, so board and chrome letterbox as a
   // single stack. Fitting the board alone would put the deck back on top of the
-  // final approach, which is the one stretch that must stay visible.
-  const stackHeight = chrome.top + app.screen.height + chrome.deck;
-  const scale = Math.min(1, vw / app.screen.width, vh / stackHeight);
+  // final approach, which is the one stretch that must stay visible — and, once
+  // there are side columns, would push those off screen entirely.
+  //
+  // Docked adds a gap under the top bar, because the side columns start at the
+  // board's top edge and butting them against the bar would read as one surface.
+  const head = chrome.docked ? DOCK_GAP : 0;
+  const boardY = chrome.top + head;
+  const stageWidth = chrome.left + app.screen.width + chrome.right;
+  const stageHeight = boardY + app.screen.height + chrome.deck;
+  const scale = Math.min(1, vw / stageWidth, vh / stageHeight);
 
   // The canvas keeps its logical CSS size; #stage applies the scale to board
   // and chrome together. Pixi derives pointer coordinates from the canvas
@@ -225,6 +340,8 @@ function fitCanvas(app: Application): void {
   // IS A REAL LOOP. The `sig` check is the only thing standing behind it.
   viewport.classList.toggle('td-touch', touch);
   viewport.classList.toggle('td-compact', chrome.tier === 'compact');
+  viewport.classList.toggle('td-docked', chrome.docked);
+  viewport.classList.toggle('td-collapsed', collapsed);
   // Set once a board exists, so the portrait wall in styles.css lands on the
   // game and never on the home screen, picker or lobby.
   viewport.classList.add('td-ingame');
@@ -238,6 +355,21 @@ function fitCanvas(app: Application): void {
   root.setProperty('--board-h', `${app.screen.height}px`);
   root.setProperty('--top-h', `${chrome.top}px`);
   root.setProperty('--deck-h', `${chrome.deck}px`);
+  // Where the canvas sits inside the stage, and how big the stage is. Both are
+  // the board's own box everywhere except versus, so every existing rule that
+  // assumed "stage == board" keeps holding without knowing these exist.
+  root.setProperty('--board-x', `${chrome.left}px`);
+  root.setProperty('--board-y', `${boardY}px`);
+  root.setProperty('--stage-w', `${stageWidth}px`);
+  root.setProperty('--stage-h', `${stageHeight}px`);
+  // The dock sizes themselves, so the four panels are placed from the same
+  // constants that reserved the room for them. A CSS rule holding its own copy
+  // of 468 is a layout that can disagree with its own letterbox.
+  root.setProperty('--dock-gap', `${DOCK_GAP}px`);
+  root.setProperty('--dock-margin', `${DOCK_MARGIN}px`);
+  root.setProperty('--dock-build', `${DOCK_BUILD_PX}px`);
+  root.setProperty('--dock-detail', `${DOCK_DETAIL_PX}px`);
+  root.setProperty('--dock-era', `${DOCK_ERA_PX}px`);
   root.setProperty('--board-scale', String(scale));
   lastScale = scale;
 }

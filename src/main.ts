@@ -1,4 +1,4 @@
-import { createRenderer } from './render/pixiApp.ts';
+import { createRenderer, setDeckCollapsed } from './render/pixiApp.ts';
 import { createTextures } from './render/textures.ts';
 import { buildMapLayer } from './render/mapLayer.ts';
 import { WorldView } from './render/worldView.ts';
@@ -236,22 +236,35 @@ async function main(): Promise<void> {
               });
             }
           },
-          boot: (seed, levelId, diffId) => {
+          boot: (seed, levelId, diffId, mode) => {
             matchSeed = seed;
+            // The server's word on what this room is playing, not ours.
+            //
+            // This used to be `isVersus`, read off our own URL — so two clients
+            // in one room could boot different rule sets and nothing noticed.
+            // Versus turns `eras` on and eras cap the upgrade ceiling at the
+            // current rung, so the race-rules client upgraded freely from wave
+            // 1 while the versus-rules client could not upgrade anything until
+            // it bought era II. It read as "the joiner cannot upgrade towers".
+            //
+            // Our URL is still what we *asked* for, and it still decides the
+            // game when we are the one creating the room — the server takes it
+            // from the `hello`. It just stops being what we boot from.
+            const bootVersus = mode === 'versus';
             // The room's pick arrives unvalidated; unknown values fall back to
             // the baseline on BOTH clients, so a version-skewed pair still
             // plays the same board. Versus ignores the pick entirely — there
             // is one board, and letting a stale lobby choice send two players
             // to different maps is a failure with no upside.
-            const level = isVersus ? VERSUS_LEVEL : (levelById(levelId) ?? CAMPAIGN[0]!);
+            const level = bootVersus ? VERSUS_LEVEL : (levelById(levelId) ?? CAMPAIGN[0]!);
             const difficulty: DifficultyId =
               Object.hasOwn(DIFFICULTIES, diffId) ? (diffId as DifficultyId) : DEFAULT_DIFFICULTY;
             matchSector = `${level.name} · ${DIFFICULTIES[difficulty].name}`;
             lobby.remove();
             void startGame(mount, hudRoot, seed, {
               level,
-              rules: isVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty),
-              ...(isVersus
+              rules: bootVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty),
+              ...(bootVersus
                 ? {
                     // The relay stands in for the loopback: a launch goes out
                     // over the socket instead of straight back at us, and a
@@ -259,6 +272,12 @@ async function main(): Promise<void> {
                     sortieRelay: (ev: SimEvent) => {
                       if (ev.type === 'sortieLaunched') {
                         controller.sendSortie(ev.sortie, ev.lane, ev.kickback);
+                        // The exchange strip's "you" row. Mirrored locally
+                        // rather than waiting for the relay to echo it back:
+                        // nothing on the wire carries our own sends, and a
+                        // record of what you did should not depend on the
+                        // other end being reachable.
+                        raceHud?.sent(ev.sortie, ev.lane);
                       } else if (ev.type === 'sortieLanded') {
                         controller.reportLanded(ev.kickback);
                       }
@@ -267,7 +286,16 @@ async function main(): Promise<void> {
                 : {}),
             }).then(({ world, raceCues, startRaceTone }) => {
               liveWorld = world;
-              raceHud = createRaceHud(mount, opponentName, currentRoom, world.map, raceCues);
+              // `hudRoot` for the opponent column: it spans the whole stage, so
+              // the column can dock beside the board instead of floating on it.
+              raceHud = createRaceHud(
+                mount,
+                opponentName,
+                currentRoom,
+                world.map,
+                raceCues,
+                hudRoot,
+              );
               startRaceTone();
               const bootAt = performance.now();
               sentPins = '';
@@ -277,7 +305,10 @@ async function main(): Promise<void> {
                   lives: world.lives,
                   elapsedMs: Math.round(performance.now() - bootAt),
                   ...(document.hidden ? { hidden: true } : {}),
-                  ...(isVersus ? { era: world.era } : {}),
+                  // `bootVersus`, like everything else the world was built
+                  // from. On our own URL this would report an era for a world
+                  // that has no eras whenever the two disagreed.
+                  ...(bootVersus ? { era: world.era } : {}),
                 };
                 // The layout rides along only when it changed — most frames
                 // carry three numbers, a build frame carries the board.
@@ -409,7 +440,7 @@ async function startSinglePlayer(
   // is always populated by the time it is used.
   let finalMoney = 0;
 
-  await startGame(mount, hudRoot, resolveSeed(), {
+  const { world: soloWorld } = await startGame(mount, hudRoot, resolveSeed(), {
     level,
     rules: isVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty, bank),
     campaign: {
@@ -445,6 +476,25 @@ async function startSinglePlayer(
       );
     },
   });
+
+  // `?peer=demo` on a solo versus board, in a dev server only.
+  //
+  // The opponent panel and the exchange strip are the two parts of the versus
+  // HUD that render from a peer's status blob rather than from the local
+  // world, so solo versus shows an empty column and they cannot be reviewed
+  // without running the relay and driving two browsers. This mounts them with
+  // invented data instead.
+  //
+  // Both halves of the guard matter. `import.meta.env.DEV` is a literal Vite
+  // replaces at build time, so in a production build this collapses to `false`
+  // and the dynamic import below is never reachable — `demoPeer.ts` is not in
+  // the bundle at all, which is the only acceptable place for a module that
+  // fabricates opponent state. The query flag is then just a convenience on
+  // top of that, not the thing keeping it out of a real match.
+  if (import.meta.env.DEV && isVersus && params.get('peer') === 'demo') {
+    const { startDemoPeer } = await import('./ui/demoPeer.ts');
+    startDemoPeer(mount, hudRoot, soloWorld);
+  }
 }
 
 function runQuery(
@@ -497,7 +547,10 @@ async function startGame(
   // Race passes no level, so it plays the baseline ground — the same one on both
   // clients, which is what keeps two screens comparable at a glance.
   const field = fieldFor(opts.level?.field);
-  const { app, layers } = await createRenderer(mount, boardW, boardH, field);
+  // The same flag `renderDeck` wraps on, so the height reserved and the rows
+  // actually laid out cannot disagree — a deck that wrapped without being paid
+  // for would put its second row back over the final approach.
+  const { app, layers } = await createRenderer(mount, boardW, boardH, field, rules.sorties);
 
   const textures = createTextures(app.renderer);
   const mapLayer = buildMapLayer(map, textures, field);
@@ -529,6 +582,11 @@ async function startGame(
       },
     },
     togglePause,
+    // Collapsing the deck frees the room the docks reserved, so the board
+    // refits into it. See `setDeckCollapsed` for why this is an event.
+    deckToggled: () => {
+      setDeckCollapsed(!ui.deckOpen);
+    },
     audio: {
       apply: (prefs) => {
         audio.setVolume(prefs.volume);

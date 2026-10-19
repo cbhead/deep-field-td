@@ -1,3 +1,4 @@
+import type { Creep } from '../types.ts';
 import { waveStats, type World } from '../world.ts';
 
 /**
@@ -11,6 +12,51 @@ import { waveStats, type World } from '../world.ts';
  * A gravitational slow scales that budget and never `creep.speed` itself, which
  * stays the base it was spawned with — see `Creep.slowTimer`.
  */
+/**
+ * Put a contact at an absolute distance along its own lane.
+ *
+ * The inverse of what `moveCreeps` does incrementally, and the reason a shove
+ * needs no cooperation from the walk at all: this writes `x`, `y`, `leg` and
+ * `progress` together, so the next tick picks up four consistent fields and
+ * carries on as if the contact had always been here.
+ *
+ * Walks from the start of the lane rather than stepping back leg by leg from
+ * where the contact is. A shove can cross several corners, and reversing the
+ * incremental walk would need its own end-of-leg handling in the opposite
+ * direction — a second traversal with its own edge cases, to save a loop over at
+ * most a few dozen waypoints, on an event that happens once every 1.2 seconds
+ * per contact at the very most.
+ *
+ * `waypoints[0]` is the off-board entry the contact spawns on and corresponds to
+ * `progress: 0` with `leg: 1`, so clamping at zero puts it back at the mouth of
+ * the lane rather than somewhere undefined behind it. The lane itself is never
+ * changed: a shove moves a contact along its route, never onto another one.
+ */
+export function placeAtProgress(w: World, c: Creep, progress: number): void {
+  const route = w.map.routes[c.route]!.waypoints;
+  const want = Math.max(0, progress);
+
+  let travelled = 0;
+  for (let leg = 1; leg < route.length; leg++) {
+    const from = route[leg - 1]!;
+    const to = route[leg]!;
+    const legLength = Math.hypot(to.x - from.x, to.y - from.y);
+
+    if (travelled + legLength >= want || leg === route.length - 1) {
+      // Guard the zero-length leg: a lane may legitimately repeat a waypoint,
+      // and dividing by it would put the contact at NaN — which reads as a
+      // contact that has vanished rather than as a crash.
+      const k = legLength > 0 ? Math.min(1, (want - travelled) / legLength) : 0;
+      c.x = from.x + (to.x - from.x) * k;
+      c.y = from.y + (to.y - from.y) * k;
+      c.leg = leg;
+      c.progress = want;
+      return;
+    }
+    travelled += legLength;
+  }
+}
+
 export function moveCreeps(w: World, dt: number): void {
   for (const c of w.creeps) {
     if (c.dead) continue;

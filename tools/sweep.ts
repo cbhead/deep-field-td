@@ -24,7 +24,7 @@
 import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { CAMPAIGN } from '../src/content/levels.ts';
 import { BALANCE } from '../src/content/balance.ts';
-import { TOWERS, type TowerId } from '../src/content/towers.ts';
+import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, type EnemyId } from '../src/content/enemies.ts';
 import { parseMap } from '../src/sim/util/grid.ts';
 import type { MapDef } from '../src/sim/types.ts';
@@ -164,7 +164,14 @@ const STRATEGIES: [string, TowerId[]][] = [
   ['all three', ['nova', 'lance', 'singularity']],
 ];
 
-const SEEDS = [4242, 7, 999, 31337, 12345];
+/**
+ * `SEEDS=N` trims the count for a fast pass while tuning; the pool is fixed so a
+ * short run is a prefix of the long one and the two are comparable. Five is the
+ * real answer — `bankfloor.ts` has taken this seam for a while and it is worth
+ * having here too, now that a run costs closer to two minutes than one.
+ */
+const SEED_POOL = [4242, 7, 999, 31337, 12345];
+const SEEDS = SEED_POOL.slice(0, Number(process.env['SEEDS'] ?? SEED_POOL.length));
 
 function sweep(label: string, apply: () => void): void {
   apply();
@@ -336,10 +343,26 @@ function marginal(): void {
  *   Filament (ramp)     up on Delta, down elsewhere — a ramp wants one target
  *                       held, and only Delta's trunk gives that.
  *
- * Method is the same as the three-station block above: drop one station from
- * the full build and read the lives delta. Dropping one slot from a 1:1:1:1:1
- * cycle leaves the survivors in the proportion they had, so the delta is the
- * station's contribution rather than an artefact of a changed build order.
+ * Method: drop one station from the full build and read the lives delta.
+ * Dropping one slot from an even cycle leaves the survivors in the proportion
+ * they had, so the delta is the station's contribution rather than an artefact
+ * of a changed build order.
+ *
+ * **Core-plus-candidate was tried here when the roster doubled, and rejected.**
+ * The reasoning for it was sound — at twelve stations a drop removes 8% of the
+ * composition where at six it removed 17%, so the instrument loses resolution —
+ * and scoring a three-gun core against core-plus-one restores that resolution.
+ * What it also does is confound contribution with *dilution*: adding a fourth
+ * station to a three-station cycle cuts every existing gun's share by a quarter,
+ * so a station that is genuinely useful still reads negative if it is worth less
+ * than the quarter of a Nova it displaced. The resulting table was negative
+ * almost everywhere, which says more about cycle arithmetic than about the
+ * roster. The same effect, measured independently: adding one gun to
+ * `campaign.ts`'s five-station probe cost Sluice five of five wins.
+ *
+ * Leave-one-out has the opposite failure and it is the more honest one — it goes
+ * quiet rather than lying. Rows that read `never bled — ceiling` are the
+ * instrument saying so out loud.
  *
  * **Difficulty is chosen per board, and that is the measurement, not a
  * convenience.** A lives delta only has resolution in a band. Below it the base
@@ -360,18 +383,26 @@ function marginal(): void {
  * keeping the better — a player is allowed to pick the right strategy, and on
  * these boards picking it is most of the game.
  */
-const SIX: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament', 'overclock'];
+/**
+ * The three guns every run opens with, and everything measured against them.
+ *
+ * Wave 0 and damage-dealing: the build a player actually has in front of them
+ * when the first decision gets made. Salvage also opens at wave 0 and is
+ * deliberately not here — a core with no damage in one of its three slots would
+ * measure every candidate against a weaker baseline than anyone plays.
+ */
+const ALL: TowerId[] = [...TOWER_IDS];
 
 function boardMarginal(): void {
   console.log(`\n\x1b[1mmarginal contribution across eight boards\x1b[0m`);
-  console.log(`  \x1b[2mlives each station adds to a build that already has the other five\x1b[0m`);
+  console.log(`  \x1b[2mlives each station adds to a build that already has the other eleven\x1b[0m`);
   console.log(
     `  \x1b[2mmeasured at the hardest tier whose reference build still wins and still bleeds —` +
       ` on the floor or the ceiling every column reads zero\x1b[0m`,
   );
   console.log(
     `  \x1b[2m${'board'.padEnd(11)}${'tier'.padEnd(10)}${'build'.padEnd(8)}` +
-      SIX.map((t) => t.slice(0, 5).padStart(7)).join('') +
+      ALL.map((t) => t.slice(0, 5).padStart(7)).join('') +
       `\x1b[0m`,
   );
 
@@ -399,7 +430,7 @@ function boardMarginal(): void {
       const rules = resolveRules(level, tier);
       // Best of all four, same as `campaign.ts` — a player picks their strategy
       // and the two tools must not disagree about which ones exist.
-      const scored = PLACEMENTS.map((s) => ({ how: s, base: score(SIX, rules, s) }));
+      const scored = PLACEMENTS.map((s) => ({ how: s, base: score(ALL, rules, s) }));
       const pick = scored.reduce((a, b) =>
         b.base.wins > a.base.wins || (b.base.wins === a.base.wins && b.base.lives > a.base.lives) ? b : a,
       );
@@ -415,7 +446,7 @@ function boardMarginal(): void {
 
     const chosen = picked ?? fallback!;
     const { rules, how, base } = chosen;
-    const worth = SIX.map((drop) => base.lives - score(SIX.filter((t) => t !== drop), rules, how).lives);
+    const worth = ALL.map((drop) => base.lives - score(ALL.filter((t) => t !== drop), rules, how).lives);
 
     const note =
       picked === null

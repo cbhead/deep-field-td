@@ -306,7 +306,12 @@ wss.on('connection', (ws: WebSocket, req) => {
           room.roster = new Map(room.players.map((p) => [p.id, p.name]));
           const seed = (Math.random() * 0x100000000) >>> 0;
           console.log(`[start] room ${room.code} seed=${seed} ${room.level}/${room.diff}`);
-          broadcast(room, { t: 'start', seed, countdownMs: COUNTDOWN_MS, level: room.level, diff: room.diff });
+          broadcast(room, {
+            t: 'start', seed, countdownMs: COUNTDOWN_MS,
+            // The room's mode, so both clients boot the same game. The server
+            // has always known this and used it to settle; it now says it.
+            level: room.level, diff: room.diff, mode: room.mode,
+          });
         }
         break;
       }

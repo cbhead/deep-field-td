@@ -1,9 +1,9 @@
-import { Container, Graphics, Sprite, TilingSprite } from 'pixi.js';
+import { Container, Graphics, Sprite, Text, TilingSprite } from 'pixi.js';
 import type { MapDef, Vec2 } from '../sim/types.ts';
 import { mulberry32 } from '../sim/util/rng.ts';
 import { TILE_PX, gridMaskAt } from './constants.ts';
 import { OFF_ROUTE, SPILL_FALLOFF, SPILL_RINGS, routeDistance, routeSpill } from './route.ts';
-import type { SectorField } from './theme.ts';
+import { THEME, type SectorField } from './theme.ts';
 import type { Textures } from './textures.ts';
 
 /**
@@ -67,6 +67,12 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): M
 
   layer.addChild(buildRouteLine(map, field));
   layer.addChild(buildEndMarkers(map, field));
+
+  // Last, so nothing on the board draws over the type. Everything that could —
+  // stations, contacts, the overlay — lives on a layer above this one anyway,
+  // which is the right order: a name is furniture and must never occlude a
+  // contact.
+  layer.addChild(buildLaneLabels(map, field));
 
   return {
     view: layer,
@@ -729,3 +735,155 @@ function buildEndMarkers(map: MapDef, field: SectorField): Graphics {
 
   return g;
 }
+
+/**
+ * How far a name sits off the road it belongs to, in tiles, centre to centre.
+ *
+ * One whole tile, so the type lands on the middle of the neighbouring tile and
+ * clears the edge of the road by about three tenths of it at this size. Closer
+ * and the outline touches the road's own border; further and the name stops
+ * reading as belonging to the lane it is naming and starts reading as a caption
+ * on the board.
+ */
+const LANE_LABEL_OFFSET = 1;
+
+/**
+ * A ceiling, in the sense the stream's alpha is one.
+ *
+ * This is the only thing the board layer draws that is *read* rather than
+ * glanced at, and it never moves, so it has the whole match in which to pull the
+ * eye. If it ever competes with a contact, dim it here — do not shrink it, since
+ * a name you have to squint at costs attention rather than saving it.
+ */
+const LANE_LABEL_ALPHA = 0.8;
+
+/**
+ * Lane names, once each, beside the tile their contacts arrive on.
+ *
+ * **The word comes from the route's own id, and so does the deck's.** The
+ * sortie deck's lane picker prints the same string under
+ * `text-transform: capitalize` (see `.seg.lanes button` in styles.css), so
+ * picking a lane and watching one are the same vocabulary by construction
+ * rather than by two lists agreeing. There is deliberately no table of display
+ * names here: a table is a thing that can drift from the map, and the failure
+ * would be a board quietly labelled with the previous author's word for it.
+ *
+ * **Two rules about which lanes get one, both derived rather than listed:**
+ *
+ *  - A single-lane board gets nothing. "Main" over the only road on Sector 01
+ *    distinguishes it from nothing, and that board's deck has no lane control to
+ *    share the word with — the name would be decoration on the one layer that
+ *    has argued hardest against it.
+ *  - Lanes that arrive on the *same* tile get nothing either. Fork's north and
+ *    south share an entry and the six tiles after it, so a name there would sit
+ *    beside road that is both lanes and identify neither, and two names stacked
+ *    on one tile only draw it darker. This is the same dedupe `buildEndMarkers`
+ *    does, resolved the other way round: a chevron says "contacts arrive here",
+ *    which stays true of a shared entry, and a name does not. Front Line, Delta
+ *    and Sluice enter separately and are labelled; Fork, Braid and Crown are
+ *    not, which is the honest answer for boards whose lanes are only distinct
+ *    downstream of where the label would go.
+ *
+ * Built once with the rest of the layer, and this adds no per-frame work: Pixi
+ * rasterises each string to a texture on first render and then draws one sprite
+ * per name, for a board that never asks for a second rasterisation.
+ */
+function buildLaneLabels(map: MapDef, field: SectorField): Container {
+  const labels = new Container();
+  if (map.routes.length < 2) return labels;
+
+  const key = (v: Vec2): string => `${v.x},${v.y}`;
+  const lanesAt = new Map<string, number>();
+  for (const route of map.routes) {
+    const first = route.waypoints[1];
+    if (first === undefined) continue;
+    lanesAt.set(key(first), (lanesAt.get(key(first)) ?? 0) + 1);
+  }
+
+  for (const route of map.routes) {
+    // `waypoints[0]` is the off-board lead-in and the canvas is exactly the
+    // board, so the first *on-board* tile is both what can be labelled and what
+    // the entry chevron already marks.
+    const entry = route.waypoints[0]!;
+    const first = route.waypoints[1];
+    if (first === undefined || lanesAt.get(key(first)) !== 1) continue;
+
+    const dx = Math.sign(first.x - entry.x);
+    const dy = Math.sign(first.y - entry.y);
+
+    // Perpendicular to travel and pointing at the nearer edge. The road runs
+    // *into* the board from here, so outward is the side with nothing on it —
+    // and on the two-lane boards it is also the side away from the other lane,
+    // which keeps the pair of names as far apart as the pair of roads.
+    const ox = dx === 0 ? outward(first.x, map.cols) : 0;
+    const oy = dy === 0 ? outward(first.y, map.rows) : 0;
+
+    const label = new Text({
+      text: laneName(route.id),
+      style: {
+        fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+        fontSize: 12,
+        fontWeight: '600',
+        // Muted board furniture takes the *sky's* colour, not the road's. The
+        // starfield is the bottom of this board's contrast hierarchy, which is
+        // exactly where a label that never changes belongs; anything from the
+        // route family would put a static word in the same tier as the brightest
+        // thing on the board. It is per-field, so a reskin carries it. There is
+        // no in-world text token to reach for — `hud.muted` is the right word
+        // for the wrong layer, being screen chrome with one fixed palette for
+        // all nine sectors.
+        fill: field.star,
+        // A star can land behind a letter, and at this weight that is enough to
+        // break the word. The theme's rule for in-world text — see
+        // `fx.textOutline` — is that a fill alone is never sufficient. Thinner
+        // than the 3px the damage numbers carry, because those sit over the
+        // brightest object on screen and this sits over the dimmest.
+        stroke: { color: THEME.fx.textOutline, width: 2, join: 'round' },
+        // Letters spaced like signage rather than like prose: it says "this is
+        // a name for the place" at a size too small to say it any other way.
+        letterSpacing: 1.2,
+      },
+    });
+
+    // Anchored so the word grows away from the road it names — into the board
+    // for a lane entering along a row, out toward the edge for one entering
+    // down a column. Either way nothing runs off the canvas and nothing crosses
+    // the tiles the label is offset from in the first place.
+    label.anchor.set(dx < 0 || ox < 0 ? 1 : 0, 0.5);
+    label.position.set(
+      (first.x + ox * LANE_LABEL_OFFSET) * TILE_PX,
+      (first.y + oy * LANE_LABEL_OFFSET) * TILE_PX,
+    );
+    label.alpha = LANE_LABEL_ALPHA;
+    labels.addChild(label);
+  }
+
+  return labels;
+}
+
+/**
+ * Which way to step off the road: toward the nearer edge, unless that would put
+ * the type off the board, in which case back inward.
+ *
+ * The fallback matters because the stage is exactly the board's pixel size —
+ * there is no margin to spill into, and a label centred outside it is simply
+ * not drawn. Crown already enters one tile from the top edge, which spends the
+ * whole of that clearance; a board that ran a lane along the outermost row
+ * would put the name off the canvas, and losing it silently is the worst of the
+ * available outcomes. Stepping inward there is a compromise the player can at
+ * least read.
+ */
+function outward(at: number, span: number): number {
+  const out = at < span / 2 ? -1 : 1;
+  const landed = at + out * LANE_LABEL_OFFSET;
+  return landed < 0.5 || landed > span - 0.5 ? -out : out;
+}
+
+/**
+ * `crest` → `Crest`, `inner-high` → `Inner-High`.
+ *
+ * Matched to what CSS `text-transform: capitalize` does to the same string in
+ * the deck, hyphens included, so the board and the lane picker never disagree
+ * about a word they both take from the map.
+ */
+const laneName = (id: string): string => id.replace(/\b\w/g, (c) => c.toUpperCase());

@@ -135,6 +135,59 @@ export interface Creep {
   shield: number;
   maxShield: number;
   shieldTimer: number;
+
+  /**
+   * A second, longer hold on shield regeneration, set by a shield-breaker.
+   *
+   * Distinct from `shieldTimer`, which every hit resets: that one suppresses
+   * regen *while you keep firing*, this one suppresses it because something
+   * broke. Checked ahead of `shieldTimer` in `updateStatuses`.
+   */
+  shieldLock: number;
+
+  /**
+   * Armour currently stripped off this contact, and the countdown until it
+   * grows back.
+   *
+   * Accumulates across hits up to the stripping shot's own ceiling, unlike the
+   * slow, which refreshes to a fixed strength. Read by `damageCreep` as a
+   * subtraction from the def's `armor` — it is an input to the one damage
+   * funnel, never a second one.
+   */
+  shred: number;
+  shredTimer: number;
+
+  /**
+   * An active burn: seconds left, damage per tick, and the countdown to the next
+   * tick.
+   *
+   * `burnTick` exists because the burn deliberately does *not* run at frame
+   * rate — see `TowerDef.burnDamage`. Refreshed and upgraded to the higher
+   * damage on a re-hit, never stacked.
+   */
+  burnTimer: number;
+  burnDamage: number;
+  burnTick: number;
+
+  /**
+   * Which station lit this, for the inspector's per-tower attribution.
+   *
+   * An id rather than a reference, the same choice `Tower.focusId` makes: the
+   * station can be sold before the burn expires, and a held reference would keep
+   * a dead tower alive and credit damage to something no longer on the board.
+   * `null` when the source is gone or was never known — attribution is never
+   * load-bearing, so nothing about the outcome changes.
+   */
+  burnSource: EntityId | null;
+
+  /**
+   * Seconds until this contact can be shoved again.
+   *
+   * Not optional and not a nicety: without a per-contact immunity window, two
+   * shoving stations covering one corner hold a contact in place forever.
+   */
+  knockTimer: number;
+
   /** Money paid on kill. Baked in at spawn, since it scales per wave. */
   bounty: number;
 
@@ -369,6 +422,15 @@ export interface Projectile {
 export type Command =
   /** Send the next wave now, forfeiting the rest of the intermission. */
   | { type: 'startWave' }
+  /**
+   * Arm or disarm sending every wave the moment its intermission opens.
+   *
+   * A command rather than a UI preference because it changes the simulation and
+   * the player's money, not the picture. Routing it here is what keeps the world
+   * a pure function of (seed, commands) — a replay that did not know the setting
+   * had been armed would diverge on the very first intermission.
+   */
+  | { type: 'setAutoStart'; on: boolean }
   | { type: 'placeTower'; defId: TowerId; col: number; row: number }
   | { type: 'upgradeTower'; id: EntityId; path: UpgradePath }
   | { type: 'sellTower'; id: EntityId }
@@ -533,6 +595,12 @@ export type SimEvent =
   | { type: 'waveRushed'; wave: number; bonus: number; secondsSaved: number }
   /** A startWave that could not be honoured. Silence would read as a bug. */
   | { type: 'waveRejected'; reason: 'spawning' | 'done' }
+  /**
+   * Auto-rush was armed or disarmed. Emitted even though the sim reads the flag
+   * directly, for the same reason `waveRejected` exists: a control that changes
+   * something and says nothing reads as a control that did not work.
+   */
+  | { type: 'autoStartSet'; on: boolean }
   /**
    * Itemised rather than a single number, because "where did my money come
    * from" is the question a player asks while deciding what to build next.
